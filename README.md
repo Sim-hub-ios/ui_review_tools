@@ -95,4 +95,4 @@ bash scripts/test.sh
 
 测试覆盖坐标、保存/加载、损坏数据保护、路径边界、导出、标注图方向、App 编辑撤销及真实 stdio MCP 进程。系统权限弹窗、全局快捷键、外部客户端配置和不同机器的模拟器环境需人工验证。
 
-设计稿：[Figma](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC)。需求与已确认决策见 `docs/`。
+需求与已确认决策见 `docs/`。
