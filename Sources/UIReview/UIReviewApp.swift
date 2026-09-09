@@ -62,7 +62,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store?.captureScreen()
         }
         if shortcut?.enable(true) == false { store.status = "全局截图快捷键已被占用，请使用工具栏截图" }
-        pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak store] event in
+        pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak store] event in
+            if event.type != .keyDown {
+                if let window = event.window, window.identifier?.rawValue == "review" {
+                    ReviewFocus.endEditingOutsideText(in: window, at: event.locationInWindow)
+                }
+                return event
+            }
             if NSApp.modalWindow == nil, let window = NSApp.keyWindow, window.attachedSheet == nil,
                window.identifier?.rawValue == "review", store?.animation != nil,
                !(window.firstResponder is NSTextView || window.firstResponder is NSTextField),
