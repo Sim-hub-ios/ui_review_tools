@@ -57,7 +57,7 @@ def main():
             process.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
             process.stdin.flush()
             tools = request('tools/list')['result']['tools']
-            assert len(tools) == 5 and all(t['annotations']['readOnlyHint'] for t in tools)
+            assert {t['name'] for t in tools} == {'get_current_review', 'list_reviews', 'get_review', 'get_screenshot', 'get_issues', 'list_animations', 'get_animation', 'get_animation_frame', 'get_animation_frames'} and all(t['annotations']['readOnlyHint'] for t in tools)
             assert json.loads(tool('get_current_review')['content'][0]['text'])['id'] == rid
             assert len(json.loads(tool('list_reviews')['content'][0]['text'])) == 1
             assert json.loads(tool('get_review', review_id=rid)['content'][0]['text'])['title'] == 'MCP test'

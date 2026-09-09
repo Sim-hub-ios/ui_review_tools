@@ -119,3 +119,19 @@ final class ReviewStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), data)
     }
 }
+
+extension ReviewStoreTests {
+    @MainActor func testFailedSaveRetainsCommentAndRetryDoesNotOverwriteExternalData() throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let repo=ReviewRepository(root:root),store=ReviewStore(repository:repo)
+        let context=try XCTUnwrap(CGContext(data:nil,width:20,height:40,bitsPerComponent:8,bytesPerRow:0,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue))
+        try store.importImage(ImageFiles.png(XCTUnwrap(context.makeImage()!)),name:"test.png")
+        store.addIssue(Region(x:2,y:2,width:10,height:10))
+        let id=try XCTUnwrap(store.issue?.id)
+        var external=try repo.load();external.revision=UUID();try repo.save(external)
+        store.updateComment(id,comment:"保留我的输入")
+        XCTAssertEqual(store.issue?.comment,"保留我的输入");XCTAssertTrue(store.hasUnsavedChanges)
+        XCTAssertFalse(store.retrySave());XCTAssertEqual(try repo.load(),external)
+    }
+}

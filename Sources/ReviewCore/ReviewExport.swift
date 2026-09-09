@@ -11,6 +11,7 @@ public enum ReviewExport {
         try fm.createDirectory(at: staging.appendingPathComponent("screenshots"), withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: staging) }
         var document = try JSONSerialization.jsonObject(with: ReviewJSON.encoder().encode(review)) as! [String: Any]
+        document.removeValue(forKey: "animations"); document.removeValue(forKey: "videoAssets"); document.removeValue(forKey: "itemOrder")
         var screenshots = document["screenshots"] as! [[String: Any]]
         var markdown = "# \(singleLine(review.title))\n\nReview ID: `\(review.id)`\n\n"
         markdown += "坐标以原图左上角为原点，单位为像素；normalizedRegion 为 0–1 归一化坐标。\n\n"

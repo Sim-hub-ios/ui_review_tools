@@ -61,14 +61,19 @@ public struct ReviewRepository: Sendable {
     }
 
     public func validate(_ library: ReviewLibrary) throws {
-        guard library.schemaVersion == 1 else { throw ReviewError.invalidData("数据版本不受支持，请使用较新版本的 UI Review。") }
+        guard (1...2).contains(library.schemaVersion) else { throw ReviewError.invalidData("数据版本不受支持，请使用较新版本的 UI Review。") }
         if let id = library.currentReviewID, !library.reviews.contains(where: { $0.id == id }) {
             throw ReviewError.invalidData("当前 Review 不存在。")
         }
         guard Set(library.reviews.map(\.id)).count == library.reviews.count else {
             throw ReviewError.invalidData("Review ID 重复。")
         }
+        var newIDs = Set(library.reviews.flatMap { $0.screenshots.map(\.id) })
         for review in library.reviews {
+            for id in review.animations.map(\.id) + review.videoAssets.map(\.id) {
+                guard newIDs.insert(id).inserted else { throw ReviewError.invalidData("新素材 ID 存在全库冲突。") }
+            }
+            try validateMotion(review)
             guard Set(review.screenshots.map(\.id)).count == review.screenshots.count else {
                 throw ReviewError.invalidData("截图 ID 重复。")
             }

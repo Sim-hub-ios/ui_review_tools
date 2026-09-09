@@ -18,9 +18,9 @@ struct UIReviewApp: App {
         .commands {
             CommandGroup(after: .newItem) {
                 Button("开始新的 Review") { store.newReview() }.keyboardShortcut("n")
-                Button("导入图片…") { store.chooseFiles() }.keyboardShortcut("o")
+                Button("导入素材…") { store.chooseFiles() }.keyboardShortcut("o")
                 Button("导出 Review…") { store.exportReview() }.keyboardShortcut("e", modifiers: [.command, .shift])
-                    .disabled(store.currentReview?.screenshots.isEmpty != false)
+                    .disabled(store.currentReview == nil)
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("撤销") { store.undo() }.keyboardShortcut("z").disabled(!store.canUndo)
@@ -63,16 +63,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if shortcut?.enable(true) == false { store.status = "全局截图快捷键已被占用，请使用工具栏截图" }
         pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak store] event in
+            if NSApp.modalWindow == nil, let window = NSApp.keyWindow, window.attachedSheet == nil,
+               window.identifier?.rawValue == "review", store?.animation != nil,
+               !(window.firstResponder is NSTextView || window.firstResponder is NSTextField),
+               event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+               [UInt16(49), 123, 124].contains(event.keyCode), let action = store?.motionKeyAction {
+                action(event.keyCode); return nil
+            }
             if NSApp.modalWindow == nil,
                let window = NSApp.keyWindow, window.attachedSheet == nil,
-               window.identifier?.rawValue == "review", let screenshot = store?.screenshot,
-               ScreenshotShortcut.shouldDelete(event, isEditingText: window.firstResponder is NSTextView || window.firstResponder is NSTextField) {
-                if !event.isARepeat { store?.deleteScreenshot(screenshot.id) }
+               window.identifier?.rawValue == "review",
+               store?.handleMaterialDeletion(event, isEditingText: window.firstResponder is NSTextView || window.firstResponder is NSTextField) == true {
                 return nil
             }
             if NSApp.modalWindow == nil,
                let window = NSApp.keyWindow, window.attachedSheet == nil,
-               window.identifier?.rawValue == "review", store?.screenshot != nil,
+               window.identifier?.rawValue == "review", (store?.screenshot != nil || store?.animation != nil),
                let tool = CanvasTool.shortcut(for: event, isEditingText: window.firstResponder is NSTextView || window.firstResponder is NSTextField) {
                 store?.tool = tool
                 return nil
@@ -82,8 +88,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                NSApp.modalWindow == nil,
                NSApp.keyWindow?.attachedSheet == nil,
                NSApp.keyWindow?.identifier?.rawValue == "review",
-               !(NSApp.keyWindow?.firstResponder is NSTextView) {
-                store?.pasteImage(); return nil
+               !(NSApp.keyWindow?.firstResponder is NSTextView || NSApp.keyWindow?.firstResponder is NSTextField) {
+                if let canvas = NSApp.keyWindow?.firstResponder as? CanvasView {
+                    canvas.paste(nil)
+                } else if let player = NSApp.keyWindow?.firstResponder as? MotionPlayerSurface {
+                    player.paste(nil)
+                } else {
+                    store?.pasteImage()
+                }
+                return nil
             }
             return event
         }
@@ -97,6 +110,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showWindow?()
         store?.importFiles(filenames.map { URL(fileURLWithPath: $0) })
         sender.reply(toOpenOrPrint: .success)
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let store, store.hasUnsavedChanges else { return .terminateNow }
+        let alert = NSAlert(); alert.messageText = "更改尚未保存"
+        alert.informativeText = "可以重试保存，或返回继续编辑。放弃后未保存的内容将丢失。"
+        alert.addButton(withTitle: "重试保存"); alert.addButton(withTitle: "返回编辑"); alert.addButton(withTitle: "放弃并退出")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return store.retrySave() ? .terminateNow : .terminateCancel
+        case .alertThirdButtonReturn: return .terminateNow
+        default: return .terminateCancel
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

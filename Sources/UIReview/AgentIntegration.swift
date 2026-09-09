@@ -13,6 +13,8 @@ struct AgentInstallationState {
     var installed = false
     var healthy = false
     var canInstall = false
+    var canUpgrade = false
+    var actionTitle: String { canUpgrade ? "一键升级" : (installed ? "已安装" : "一键安装") }
 }
 
 struct AgentIntegrationError: LocalizedError {
@@ -116,13 +118,24 @@ struct AgentInstaller {
         (config["env_vars"] as? [String] ?? []).isEmpty &&
         (config["cwd"] as? String ?? "").isEmpty
     }
+    /// Only replace a recognizable local UI Review helper; unrelated same-name servers stay protected.
+    func isUpgradeable(_ config: [String: Any]) -> Bool {
+        guard (config["type"] as? String ?? "stdio") == "stdio",
+              let command = config["command"] as? String,
+              command == executable || URL(fileURLWithPath: command).lastPathComponent == "ui-review-mcp",
+              (config["env"] as? [String: String] ?? [:]).isEmpty,
+              (config["env_vars"] as? [String] ?? []).isEmpty,
+              (config["cwd"] as? String ?? "").isEmpty else { return false }
+        let args = config["args"] as? [String] ?? []
+        return args.isEmpty || (args.count == 2 && args[0] == "--data-dir")
+    }
     func installationArguments(_ client: AgentClient) throws -> [String] {
         if client == .codex { return ["mcp", "add", "ui-review", "--", executable] + arguments }
         let data = try JSONSerialization.data(withJSONObject: ["type": "stdio", "command": executable, "args": arguments])
         return ["mcp", "add-json", "--scope", "user", "ui-review", String(decoding: data, as: UTF8.self)]
     }
     /// Preserve every unrelated JSON field, including fields from newer Claude versions.
-    func installClaude() throws {
+    func installClaude(replacing expected: [String: Any]? = nil) throws {
         let file = claudeConfig.resolvingSymlinksInPath(), fm = FileManager.default
         let previous = fm.fileExists(atPath: file.path) ? try Data(contentsOf: file) : nil
         var root = try previous.map { try JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
@@ -131,7 +144,7 @@ struct AgentInstaller {
             throw AgentIntegrationError(message: "MCP 配置格式错误，未修改。")
         }
         var servers = root?["mcpServers"] as? [String: Any] ?? [:]
-        guard servers["ui-review"] == nil else { throw AgentIntegrationError(message: "配置已变化，请重新检测后再安装。") }
+        guard expected.map({ NSDictionary(dictionary: $0).isEqual(servers["ui-review"]) }) ?? (servers["ui-review"] == nil) else { throw AgentIntegrationError(message: "配置已变化，请重新检测后再安装。") }
         servers["ui-review"] = ["type": "stdio", "command": executable, "args": arguments]
         root?["mcpServers"] = servers
         let data = try JSONSerialization.data(withJSONObject: root!, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
@@ -157,12 +170,21 @@ struct AgentInstaller {
         var installed = false
         do {
             let existing = try configuration(client, cli: cli)
-            if let existing, !matches(existing) {
-                return .init(message: "已有不同的 ui-review 配置（或已禁用），未覆盖。请在客户端移除旧配置后重新安装。")
+            let upgrade = existing.map { !matches($0) } ?? false
+            if upgrade, let existing {
+                guard isUpgradeable(existing) else {
+                    return .init(message: "已有自定义 ui-review 配置，无法自动升级。请检查手动配置。")
+                }
+                guard try probe() else {
+                    return .init(message: "当前 App 内的 MCP 仍是旧版，请先更新 UI Review App。", installed: true)
+                }
+                guard install else {
+                    return .init(message: "检测到旧版路径或配置，可一键升级到当前 App 的 MCP（并启用）。其他 MCP 配置会保留。", installed: true, canUpgrade: true)
+                }
             }
-            if existing == nil {
+            if existing == nil || upgrade {
                 guard install else { return .init(message: "尚未安装 UI Review MCP", canInstall: true) }
-                if client == .claude { try installClaude() }
+                if client == .claude { try installClaude(replacing: existing) }
                 else {
                     let folder = environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".codex")
                     let config = folder.appendingPathComponent("config.toml")
@@ -176,13 +198,13 @@ struct AgentInstaller {
                 throw AgentIntegrationError(message: "安装后配置核对失败，请检查客户端设置。")
             }
             installed = true
-            try probe()
-            return .init(message: "配置已安装 · MCP 服务连接正常。请在客户端重新连接或开启新会话。", installed: true, healthy: true)
+            let motion = try probe()
+            return .init(message: motion ? "配置已安装 · 截图和动画读取可用。请在客户端重新连接。" : "当前 App 内的 MCP 仍是旧版，请先更新 UI Review App。", installed: true, healthy: true)
         } catch {
             return .init(message: (installed ? "配置已安装，连接检测失败：" : "检测或安装失败：") + error.localizedDescription, installed: installed)
         }
     }
-    func probe() throws {
+    @discardableResult func probe() throws -> Bool {
         let requests: [[String: Any]] = [
             ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-11-25", "capabilities": [:], "clientInfo": ["name": "UIReview-install-check", "version": "1"]]],
             ["jsonrpc": "2.0", "method": "notifications/initialized"],
@@ -190,9 +212,9 @@ struct AgentInstaller {
         ]
         let input = try requests.map { try JSONSerialization.data(withJSONObject: $0) }.reduce(into: Data()) { $0.append($1); $0.append(10) }
         let output = try run(executable, arguments, processEnvironment, input)
-        try Self.validateProbe(output)
+        return try Self.validateProbe(output)
     }
-    static func validateProbe(_ data: Data) throws {
+    @discardableResult static func validateProbe(_ data: Data) throws -> Bool {
         let replies = try data.split(separator: 10).map { try JSONSerialization.jsonObject(with: Data($0)) as? [String: Any] ?? [:] }
         let initialized = replies.first { $0["id"] as? Int == 1 }?["result"] as? [String: Any]
         let listed = replies.first { $0["id"] as? Int == 2 }?["result"] as? [String: Any]
@@ -200,10 +222,12 @@ struct AgentInstaller {
         let expected: Set<String> = ["get_current_review", "list_reviews", "get_review", "get_screenshot", "get_issues"]
         guard initialized?["protocolVersion"] as? String == "2025-11-25",
               (initialized?["serverInfo"] as? [String: Any])?["name"] as? String == "ui-review",
-              Set(tools.compactMap { $0["name"] as? String }) == expected,
+              expected.isSubset(of: Set(tools.compactMap { $0["name"] as? String })),
               tools.allSatisfy({ ($0["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true }) else {
             throw AgentIntegrationError(message: "MCP 握手或只读工具检测未通过。")
         }
+        let motion: Set<String> = ["list_animations", "get_animation", "get_animation_frame", "get_animation_frames"]
+        return motion.isSubset(of: Set(tools.compactMap { $0["name"] as? String }))
     }
 }
 
@@ -214,7 +238,7 @@ final class AgentIntegrationModel {
     func refresh(_ client: AgentClient, installer: AgentInstaller, install: Bool = false) async {
         guard busy == nil else { return }
         busy = client
-        states[client] = .init(message: install ? "正在安装并检测…" : "正在检测…")
+        states[client] = .init(message: install ? "正在安装或升级并检测…" : "正在检测…")
         let state = await Task.detached { installer.check(client, install: install) }.value
         states[client] = state
         busy = nil

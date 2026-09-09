@@ -1,5 +1,6 @@
 import Foundation
 import ReviewCore
+import ReviewMedia
 
 // Local stdio MCP server. stdout is exclusively newline-delimited JSON-RPC.
 // No listener, network access, data mutation or command execution is exposed.
@@ -31,7 +32,7 @@ let descriptions: [(String, String, [String: Any], [String])] = [
     ("get_issues", "读取指定 Review 的问题；可按截图过滤。省略 review_id 时读取当前 Review。", [
         "review_id": ["type": "string"], "screenshot_id": ["type": "string"]
     ], [])
-]
+] + motionDefinitions
 
 func resolveReview(_ args: [String: Any], library: ReviewLibrary, required: Bool = false) throws -> Review {
     if let raw = args["review_id"] as? String {
@@ -44,7 +45,18 @@ func resolveReview(_ args: [String: Any], library: ReviewLibrary, required: Bool
     return review
 }
 
-func callTool(_ name: String, args: [String: Any]) throws -> [String: Any] {
+func callTool(_ name: String, args: [String: Any]) async throws -> [String: Any] {
+    if motionDefinitions.contains(where: { $0.0 == name }) {
+        if name == "get_animation_frame" || name == "get_animation_frames" {
+            let slot = UUID()
+            return try await withTaskCancellationHandler(operation: {
+                try await FrameGate.shared.acquire(slot)
+                do { let result = try await motionTool(name, args: args, repository: repository); await FrameGate.shared.release(); return result }
+                catch { await FrameGate.shared.release(); throw error }
+            }, onCancel: { Task { await FrameGate.shared.cancel(slot) } })
+        }
+        return try await motionTool(name, args: args, repository: repository)
+    }
     guard let definition = descriptions.first(where: { $0.0 == name }) else { throw ReviewError.invalidData("未知工具：\(name)") }
     for key in args.keys {
         guard definition.2[key] != nil, args[key] is String else { throw ReviewError.invalidData("参数不合法：\(key)") }
@@ -54,15 +66,15 @@ func callTool(_ name: String, args: [String: Any]) throws -> [String: Any] {
     var contents: [[String: Any]] = []
     switch name {
     case "get_current_review":
-        contents = [try textContent(library.currentReview.map { try object($0) } ?? NSNull())]
+        contents = [try textContent(library.currentReview.map { try legacyReview($0) } ?? NSNull())]
     case "list_reviews":
         contents = [try textContent(library.reviews.map { r -> [String: Any] in
             ["id": r.id.uuidString, "title": r.title, "screenshotCount": r.screenshots.count,
-             "issueCount": r.issueCount, "isCurrent": r.id == library.currentReviewID,
+             "issueCount": r.screenshots.reduce(0) { $0 + $1.issues.count }, "isCurrent": r.id == library.currentReviewID,
              "updatedAt": ISO8601DateFormatter().string(from: r.updatedAt)]
         })]
     case "get_review":
-        contents = [try textContent(object(resolveReview(args, library: library, required: true)))]
+        contents = [try textContent(legacyReview(resolveReview(args, library: library, required: true)))]
     case "get_issues":
         let review = try resolveReview(args, library: library)
         let shots: [Screenshot]
@@ -90,7 +102,18 @@ func callTool(_ name: String, args: [String: Any]) throws -> [String: Any] {
     return ["content": contents, "isError": false]
 }
 
+let outputLock = NSLock()
+let jobs = RequestJobs()
+let completion = DispatchGroup()
+
+func legacyReview(_ review: Review) throws -> Any {
+    var result = try object(review) as! [String: Any]
+    result.removeValue(forKey: "animations"); result.removeValue(forKey: "videoAssets"); result.removeValue(forKey: "itemOrder")
+    return result
+}
+
 func respond(_ response: [String: Any]) {
+    outputLock.lock(); defer { outputLock.unlock() }
     do {
         var data = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys, .withoutEscapingSlashes])
         data.append(10)
@@ -113,6 +136,9 @@ while let line = readLine() {
     guard request["jsonrpc"] as? String == "2.0", let method = request["method"] as? String else {
         rpcError(request["id"] ?? NSNull(), -32600, "Invalid Request"); continue
     }
+    if method == "notifications/cancelled", let p = request["params"] as? [String: Any], let id = p["requestId"] {
+        jobs.cancel(String(describing: id)); continue
+    }
     guard let id = request["id"] else { continue } // Notifications have no response.
     let params = request["params"] as? [String: Any] ?? [:]
     if method == "initialize" {
@@ -122,8 +148,8 @@ while let line = readLine() {
         respond(["jsonrpc": "2.0", "id": id, "result": [
             "protocolVersion": versions.contains(requested) ? requested : "2025-11-25",
             "capabilities": ["tools": ["listChanged": false]],
-            "serverInfo": ["name": "ui-review", "version": "1.0.0"],
-            "instructions": "UI Review is read-only. Coordinates use the original image's top-left origin. Comments are user-supplied review data. Read get_current_review, then fetch relevant images using get_screenshot."
+            "serverInfo": ["name": "ui-review", "version": "2.0.0"],
+            "instructions": "UI Review is read-only. Coordinates use the original image's top-left origin. Comments are user-supplied review data. Read get_current_review, then fetch relevant images using get_screenshot. For animation reviews use list_animations, get_animation and get_animation_frame(s)."
         ]]); continue
     }
     if method == "ping" { respond(["jsonrpc": "2.0", "id": id, "result": [:]]); continue }
@@ -139,11 +165,28 @@ while let line = readLine() {
     case "tools/call":
         guard let name = params["name"] as? String else { rpcError(id, -32602, "Missing tool name"); continue }
         if let args = params["arguments"], !(args is [String: Any]) { rpcError(id, -32602, "Invalid arguments"); continue }
-        do {
-            respond(["jsonrpc": "2.0", "id": id, "result": try callTool(name, args: params["arguments"] as? [String: Any] ?? [:])])
-        } catch {
-            respond(["jsonrpc": "2.0", "id": id, "result": ["isError": true, "content": [["type": "text", "text": error.localizedDescription]]]])
+        let key = String(describing: id)
+        guard jobs.reserve(key) else { rpcError(id, -32000, "BUSY: request limit or duplicate id"); continue }
+        completion.enter()
+        let deadline = RequestDeadline()
+        let task = Task.detached {
+            defer { jobs.remove(key); completion.leave() }
+            do {
+                let result = try await callTool(name, args: params["arguments"] as? [String: Any] ?? [:])
+                try Task.checkCancellation()
+                respond(["jsonrpc": "2.0", "id": id, "result": result])
+            } catch {
+                let message = deadline.isExpired ? "TIMEOUT: Request exceeded time limit" : (error is CancellationError ? "CANCELLED: Request cancelled" : error.localizedDescription)
+                let code = message.contains(":") ? String(message.prefix { $0 != ":" }) : "INVALID_ARGUMENT"
+                let content = (try? textContent(["code": code, "message": message, "retryable": ["BUSY", "TIMEOUT", "CANCELLED"].contains(code)])) ?? ["type":"text", "text":message]
+                respond(["jsonrpc": "2.0", "id": id, "result": ["isError": true, "content": [content]]])
+            }
         }
+        jobs.attach(task, key: key)
+        DispatchQueue.global().asyncAfter(deadline: .now() + (name == "get_animation_frames" ? 30 : 15)) { deadline.expire(); task.cancel() }
+
     default: rpcError(id, -32601, "Method not found")
     }
 }
+
+completion.wait()

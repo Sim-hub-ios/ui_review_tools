@@ -1,0 +1,45 @@
+{
+  "exampleType": "animation-issue-with-related-metadata",
+  "schemaVersion": 2,
+  "note": "虚构示例；非完整 library.json，时间为素材局部时间，矩形基于正向原帧。",
+  "reviewID": "11111111-1111-4111-8111-111111111111",
+  "animationID": "22222222-2222-4222-8222-222222222222",
+  "currentAsset": {
+    "id": "33333333-3333-4333-8333-333333333333",
+    "displayWidth": 1080,
+    "displayHeight": 1920,
+    "duration": {"value": 8400, "timescale": 1000}
+  },
+  "referenceAsset": {
+    "id": "44444444-4444-4444-8444-444444444444",
+    "displayWidth": 1080,
+    "displayHeight": 1920,
+    "duration": {"value": 4000, "timescale": 1000}
+  },
+  "issue": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "target": {
+      "kind": "range",
+      "start": {"value": 5120, "timescale": 1000},
+      "end": {"value": 5420, "timescale": 1000}
+    },
+    "comment": "弹窗一开始冲得太快，末尾突然停住。",
+    "expectation": "参考视频那样逐渐减速，停下时轻微回弹。",
+    "component": "退出账号弹窗",
+    "category": "timing",
+    "region": {
+      "assetID": "33333333-3333-4333-8333-333333333333",
+      "actualTime": {"value": 5240, "timescale": 1000},
+      "frameWidth": 1080,
+      "frameHeight": 1920,
+      "pixelRect": {"x": 54, "y": 1056, "width": 972, "height": 768},
+      "normalizedRect": {"x": 0.05, "y": 0.55, "width": 0.9, "height": 0.4}
+    },
+    "referenceSnapshot": {
+      "referenceAssetID": "44444444-4444-4444-8444-444444444444",
+      "currentStart": {"value": 5000, "timescale": 1000},
+      "referenceStart": {"value": 2000, "timescale": 1000},
+      "alignmentID": "66666666-6666-4666-8666-666666666666"
+    }
+  }
+}

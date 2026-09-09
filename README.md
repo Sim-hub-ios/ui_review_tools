@@ -98,4 +98,10 @@ bash scripts/test.sh
 
 当前验证结果与尚未覆盖的环境见 [验证总表](docs/verification.md)，真实界面操作记录见 [冒烟测试](docs/smoke-test-2026-09-05.md)。
 
-需求与已确认决策见 `docs/`。
+需求入口：[PRD V2.0](docs/UI_Review_PRD_V2.0.md)（截图与动画审查整合需求）。历史需求见 [PRD V1.0](docs/UI_Review_PRD_V1.0.md)，交互稿见 [动画设计与原型记录](docs/motion-review-design.md)，已有决策见 [设计决策](docs/design-decisions.md)。
+
+开发设计见 [V2 技术方案](docs/UI_Review_V2_Technical_Design.md)，包含数据迁移、视频帧与框选、MCP 契约、资源预算和开发拆分；附 [动画问题 JSON 示例](docs/examples/motion-issue-v2.json)。
+
+视觉交付见 [V2 视觉设计稿](docs/UI_Review_V2_Visual_Design.md)，包含七张流程/空状态页面、主要异常状态和视觉规范，以及逐页 Figma 链接。
+
+V2 本机开发版与验证边界见 [开发交付记录](docs/UI_Review_V2_Implementation.md)。使用 `scripts/open-v2-preview.command` 可在独立测试数据目录启动预览。

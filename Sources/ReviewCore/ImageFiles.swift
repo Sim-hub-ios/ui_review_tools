@@ -55,6 +55,10 @@ public enum ImageFiles {
     /// bottom-left based; only coordinates are converted, never screenshot pixels.
     public static func annotated(_ screenshot: Screenshot, repository: ReviewRepository) throws -> Data {
         let image = try load(repository.assetURL(for: screenshot))
+        return try annotated(image, issues: screenshot.issues)
+    }
+
+    public static func annotated(_ image: CGImage, issues: [Issue]) throws -> Data {
         let w = image.width, h = image.height
         guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
                                       bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
@@ -65,7 +69,7 @@ public enum ImageFiles {
         let lineWidth = max(2.0, Double(w) / 450)
         let diameter = max(22.0, Double(w) / 32)
         let blue = CGColor(red: 0.15, green: 0.39, blue: 0.92, alpha: 1)
-        for (index, issue) in screenshot.issues.enumerated() {
+        for (index, issue) in issues.enumerated() {
             let r = issue.region
             let rect = CGRect(x: r.x, y: Double(h) - r.y - r.height, width: r.width, height: r.height)
             context.setStrokeColor(blue); context.setLineWidth(lineWidth)

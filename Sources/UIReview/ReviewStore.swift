@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import ReviewCore
+import ReviewMedia
 import UniformTypeIdentifiers
 
 enum CanvasTool: String, CaseIterable {
@@ -26,7 +27,14 @@ enum ScreenshotShortcut {
 @MainActor @Observable
 final class ReviewStore {
     let repository: ReviewRepository
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var saveDeadline = Date.distantFuture
+    @ObservationIgnored private let writer: LibraryWriter
+    private(set) var hasUnsavedChanges = false
     private(set) var library = ReviewLibrary()
+    var replacingMotionRegion = false
+    var pendingReferenceID: UUID?
+    var selectedAnimationID: UUID?
     var selectedScreenshotID: UUID?
     var selectedIssueID: UUID?
     var tool: CanvasTool = .rectangle
@@ -34,6 +42,7 @@ final class ReviewStore {
     var errorMessage: String?
     var status = "所有内容保存在本机"
     var isBusy = false
+    var showHandoff = false
     var showHistory = false
     var showIntegration = false
     var showSimulator = false
@@ -44,10 +53,13 @@ final class ReviewStore {
     private var lastEditKey: String?
     private var lastEditTime = Date.distantPast
     // Cache fills during View.body evaluation must not invalidate the observation graph.
+    @ObservationIgnored var motionKeyAction: ((UInt16) -> Void)?
+    @ObservationIgnored var importTask: Task<Void, Never>?
     @ObservationIgnored private var images: [UUID: NSImage] = [:]
 
     struct Snapshot {
         var library: ReviewLibrary
+        var animationID: UUID?
         var screenshotID: UUID?
         var issueID: UUID?
         var name: String
@@ -55,9 +67,10 @@ final class ReviewStore {
 
     init(repository: ReviewRepository = ReviewRepository()) {
         self.repository = repository
+        self.writer = LibraryWriter(repository: repository)
         do {
-            library = try repository.load()
-            selectedScreenshotID = library.currentReview?.screenshots.first?.id
+            library = try writer.open()
+            selectFirstMaterial()
         } catch {
             loadFailed = true
             errorMessage = "无法读取保存的数据，已停止写入以保护原文件。\n\(error.localizedDescription)"
@@ -80,29 +93,61 @@ final class ReviewStore {
     }
 
     func selectScreenshot(_ id: UUID?) {
-        selectedScreenshotID = id; selectedIssueID = nil; zoom = 0; lastEditKey = nil
+        selectedAnimationID = nil; selectedScreenshotID = id; selectedIssueID = nil; zoom = 0; lastEditKey = nil
         tool = screenshot?.issues.isEmpty == false ? .select : .rectangle
     }
 
     private func snapshot(_ name: String) -> Snapshot {
-        Snapshot(library: library, screenshotID: selectedScreenshotID, issueID: selectedIssueID, name: name)
+        Snapshot(library: library, animationID: selectedAnimationID, screenshotID: selectedScreenshotID, issueID: selectedIssueID, name: name)
     }
 
-    private func commit(_ name: String, coalescing key: String? = nil, _ mutate: (inout ReviewLibrary) -> Void) {
+    func commit(_ name: String, coalescing key: String? = nil, _ mutate: (inout ReviewLibrary) -> Void) {
         guard !loadFailed else { return }
         var next = library
         mutate(&next)
         guard next != library else { return }
+        for i in next.reviews.indices { next.reviews[i].reconcileOrder() }
+        next.schemaVersion = 2; next.revision = UUID()
+        do { try repository.validate(next) } catch { errorMessage = error.localizedDescription; return }
+        if key == nil || key != lastEditKey || Date().timeIntervalSince(lastEditTime) > 1.2 {
+            undoStack.append(snapshot(name))
+            if undoStack.count > 80 { undoStack.removeFirst() }
+        }
+        redoStack.removeAll(); library = next; hasUnsavedChanges = true
+        lastEditKey = key; lastEditTime = Date()
+        repairSelection()
+        if key != nil { scheduleSave() } else { retrySave() }
+
+    }
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        if saveDeadline == .distantFuture { saveDeadline = Date().addingTimeInterval(1) }
+        let delay = max(0, min(0.3, saveDeadline.timeIntervalSinceNow))
+        saveTask = Task {
+            do {
+                try await Task.sleep(for: .seconds(delay)); try Task.checkCancellation()
+                let value = library
+                saveDeadline = .distantFuture
+                try await writer.saveAsync(value)
+                guard library.revision == value.revision else { return }
+                hasUnsavedChanges = false; status = "已自动保存到本机"
+            } catch is CancellationError { }
+            catch { guard !Task.isCancelled, hasUnsavedChanges else { return }; hasUnsavedChanges = true; status = "更改尚未保存 · 请重试"; errorMessage = "保存失败，输入已保留：\(error.localizedDescription)" }
+        }
+    }
+
+    @discardableResult func retrySave() -> Bool {
+        guard !loadFailed else { return false }
+        saveTask?.cancel(); saveTask = nil; saveDeadline = .distantFuture
         do {
-            try repository.save(next)
-            if key == nil || key != lastEditKey || Date().timeIntervalSince(lastEditTime) > 1.2 {
-                undoStack.append(snapshot(name))
-                if undoStack.count > 80 { undoStack.removeFirst() }
-            }
-            redoStack.removeAll(); library = next
-            lastEditKey = key; lastEditTime = Date()
-            repairSelection(); status = "已自动保存到本机"
-        } catch { errorMessage = "保存失败：\(error.localizedDescription)" }
+            try writer.save(library); hasUnsavedChanges = false; status = "已自动保存到本机"
+            return true
+        } catch {
+            hasUnsavedChanges = true; status = "更改尚未保存 · 请重试"
+            errorMessage = "保存失败，输入已保留：\(error.localizedDescription)"
+            return false
+        }
     }
 
     private func mutateScreenshot(_ name: String, key: String? = nil, _ change: (inout Screenshot) -> Void) {
@@ -115,41 +160,46 @@ final class ReviewStore {
     }
 
     func undo() {
-        guard let previous = undoStack.last else { return }
-        do {
-            try repository.save(previous.library)
-            redoStack.append(snapshot(previous.name)); undoStack.removeLast()
-            restore(previous); status = "已撤销\(previous.name)"
-        } catch { errorMessage = error.localizedDescription }
+        guard !loadFailed, let previous = undoStack.popLast() else { return }
+        redoStack.append(snapshot(previous.name))
+        restore(previous); library.revision = UUID(); hasUnsavedChanges = true
+        if retrySave() { status = "已撤销\(previous.name)" }
     }
 
     func redo() {
-        guard let next = redoStack.last else { return }
-        do {
-            try repository.save(next.library)
-            undoStack.append(snapshot(next.name)); redoStack.removeLast()
-            restore(next); status = "已重做\(next.name)"
-        } catch { errorMessage = error.localizedDescription }
+        guard !loadFailed, let next = redoStack.popLast() else { return }
+        undoStack.append(snapshot(next.name))
+        restore(next); library.revision = UUID(); hasUnsavedChanges = true
+        if retrySave() { status = "已重做\(next.name)" }
     }
 
     private func restore(_ state: Snapshot) {
-        library = state.library; selectedScreenshotID = state.screenshotID
+        library = state.library; selectedAnimationID = state.animationID; selectedScreenshotID = state.screenshotID
         selectedIssueID = state.issueID; lastEditKey = nil; repairSelection()
     }
 
+    private func selectFirstMaterial() {
+        selectedScreenshotID = nil; selectedAnimationID = nil; selectedIssueID = nil
+        guard let item = currentReview?.itemOrder.first else { return }
+        if item.kind == .animation { selectedAnimationID = item.id; tool = .select }
+        else { selectedScreenshotID = item.id; tool = screenshot?.issues.isEmpty == false ? .select : .rectangle }
+    }
+
     private func repairSelection() {
-        if screenshot == nil { selectedScreenshotID = currentReview?.screenshots.first?.id }
+        if let animation { selectedScreenshotID = nil; if !animation.issues.contains(where: { $0.id == selectedIssueID }) { selectedIssueID = nil }; return }
+        selectedAnimationID = nil
+        if screenshot == nil { selectFirstMaterial() }
         if issue == nil { selectedIssueID = nil }
     }
 
     func newReview() {
         commit("开始新的 Review") { $0.currentReviewID = nil }
-        selectedScreenshotID = nil; selectedIssueID = nil
+        selectedAnimationID = nil; selectedScreenshotID = nil; selectedIssueID = nil
     }
 
     func openReview(_ id: UUID) {
         commit("切换 Review") { $0.currentReviewID = id }
-        selectScreenshot(currentReview?.screenshots.first?.id)
+        selectFirstMaterial()
         showHistory = false
     }
 
@@ -176,6 +226,17 @@ final class ReviewStore {
                   let s = lib.reviews[r].screenshots.firstIndex(where: { $0.id == id }) else { return }
             lib.reviews[r].screenshots[s].name = name; lib.reviews[r].updatedAt = Date()
         }
+    }
+
+    /// Return whether this material shortcut consumed the event. Text editing keeps its own keys.
+    func handleMaterialDeletion(_ event: NSEvent, isEditingText: Bool) -> Bool {
+        guard ScreenshotShortcut.shouldDelete(event, isEditingText: isEditingText),
+              animation != nil || screenshot != nil else { return false }
+        // Holding the key must not delete the next automatically selected material.
+        guard !event.isARepeat else { return true }
+        if let animation { deleteAnimation(animation.id) }
+        else if let screenshot { deleteScreenshot(screenshot.id) }
+        return true
     }
 
     func deleteScreenshot(_ id: UUID) {
@@ -217,7 +278,8 @@ final class ReviewStore {
 
     func importFiles(_ urls: [URL]) {
         guard !isBusy, !loadFailed else { return }
-        for url in urls {
+        let videos = urls.filter { ["mp4", "mov"].contains($0.pathExtension.lowercased()) }
+        for url in urls where !videos.contains(url) {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
@@ -229,6 +291,7 @@ final class ReviewStore {
             }
             catch { errorMessage = "\(url.lastPathComponent)：\(error.localizedDescription)" }
         }
+        if !videos.isEmpty { importVideos(videos) }
     }
 
     func importImage(_ data: Data, name: String) throws {
@@ -250,9 +313,9 @@ final class ReviewStore {
 
     func chooseFiles() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.png, .jpeg, .tiff, .heic, .webP]
+        panel.allowedContentTypes = [.png, .jpeg, .tiff, .heic, .webP, .mpeg4Movie, .quickTimeMovie]
         panel.allowsMultipleSelection = true; panel.canChooseDirectories = false
-        panel.prompt = "导入截图"
+        panel.prompt = "导入素材"
         if panel.runModal() == .OK { importFiles(panel.urls) }
     }
 
@@ -268,7 +331,8 @@ final class ReviewStore {
     }
 
     func exportReview() {
-        guard let review = currentReview, !review.screenshots.isEmpty else { return }
+        if currentReview?.animations.isEmpty == false { showHandoff = true; return }
+        guard let review = currentReview, !review.screenshots.isEmpty, retrySave() else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.prompt = "导出到此处"; panel.message = "将在所选位置创建新的 Review 文件夹。"
         guard panel.runModal() == .OK, let parent = panel.url else { return }
@@ -281,7 +345,8 @@ final class ReviewStore {
     }
 
     func copyHandoff() {
-        guard let review = currentReview else { return }
+        if currentReview?.animations.isEmpty == false { showHandoff = true; return }
+        guard let review = currentReview, retrySave() else { return }
         let text = "请通过 ui-review MCP 的 get_review 读取 Review \(review.id.uuidString)（\(review.title)），然后用 get_screenshot 获取相关原图及标注图。逐项理解用户评论和区域坐标，结合当前项目处理 UI 问题。若要求不清楚，请先说明疑问。"
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
         status = "已复制交接提示词；请在 Coding Agent 中粘贴"

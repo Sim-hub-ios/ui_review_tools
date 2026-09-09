@@ -11,9 +11,11 @@ let package = Package(
     ],
     targets: [
         .target(name: "ReviewCore"),
-        .executableTarget(name: "UIReview", dependencies: ["ReviewCore"],
+        .target(name: "ReviewMedia", dependencies: ["ReviewCore"]),
+        .executableTarget(name: "UIReview", dependencies: ["ReviewCore", "ReviewMedia"],
                           linkerSettings: [.linkedFramework("Carbon")]),
-        .executableTarget(name: "UIReviewMCP", dependencies: ["ReviewCore"]),
+        .executableTarget(name: "UIReviewMCP", dependencies: ["ReviewCore", "ReviewMedia"]),
+        .testTarget(name: "ReviewMediaTests", dependencies: ["ReviewCore", "ReviewMedia"]),
         .testTarget(name: "ReviewCoreTests", dependencies: ["ReviewCore"]),
         .testTarget(name: "UIReviewTests", dependencies: ["UIReview", "ReviewCore"])
     ],

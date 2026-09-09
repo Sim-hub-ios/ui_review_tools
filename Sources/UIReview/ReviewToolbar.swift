@@ -40,10 +40,10 @@ struct ReviewToolbar: View {
                 .help("截取屏幕 · ⌃⌥⌘S").disabled(store.isBusy || store.loadFailed)
             Button("模拟器截图") { store.chooseSimulator() }.fixedSize()
                 .help("iOS Simulator 截图").disabled(store.isBusy || store.loadFailed)
-            Button("导入图片") { store.chooseFiles() }.fixedSize()
-                .help("导入图片 · ⌘O").disabled(store.isBusy || store.loadFailed)
+            Button("导入素材") { store.chooseFiles() }.fixedSize()
+                .help("导入素材 · ⌘O").disabled(store.isBusy || store.loadFailed)
             Button("导出 Review") { store.exportReview() }.fixedSize()
-                .help("导出 Review · ⇧⌘E").disabled(store.currentReview?.screenshots.isEmpty != false)
+                .help("导出 Review · ⇧⌘E").disabled(store.currentReview == nil)
             Button { store.copyHandoff() } label: {
                 Text("复制交接提示词").font(.system(size: 12))
                     .foregroundStyle(colorScheme == .dark ? Color(red: 34/255, green: 37/255, blue: 43/255) : .white)

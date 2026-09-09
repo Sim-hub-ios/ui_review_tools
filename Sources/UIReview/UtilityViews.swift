@@ -163,9 +163,9 @@ struct IntegrationView: View {
                                 Button("检测状态") {
                                     Task { await integration.refresh(client, installer: installer) }
                                 }
-                                Button(state.installed ? "已安装" : "一键安装") {
+                                Button(state.actionTitle) {
                                     Task { await integration.refresh(client, installer: installer, install: true) }
-                                }.disabled(!state.canInstall)
+                                }.disabled(!state.canInstall && !state.canUpgrade)
                             }
                             Text(state.message).font(.caption)
                                 .foregroundStyle(state.healthy ? Color.green : Color.secondary)

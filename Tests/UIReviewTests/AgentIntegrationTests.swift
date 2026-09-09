@@ -2,8 +2,8 @@ import XCTest
 @testable import UIReview
 
 final class AgentIntegrationTests: XCTestCase {
-    private func fixture() throws -> Data {
-        let tools = ["get_current_review", "list_reviews", "get_review", "get_screenshot", "get_issues"].map {
+    private func fixture(motion: Bool = false) throws -> Data {
+        let tools = (["get_current_review", "list_reviews", "get_review", "get_screenshot", "get_issues"] + (motion ? ["list_animations", "get_animation", "get_animation_frame", "get_animation_frames"] : [])).map {
             ["name": $0, "annotations": ["readOnlyHint": true]] as [String: Any]
         }
         return try [
@@ -39,18 +39,49 @@ final class AgentIntegrationTests: XCTestCase {
         XCTAssertTrue(i.check(.codex, install: true).healthy)
         XCTAssertEqual(writes, 1); XCTAssertEqual(probes, 2)
     }
-    func testConflictingOrDisabledConfigurationNeverWritesOrLaunches() throws {
-        for disabled in [false, true] {
-            var i = installer(); var calls = 0
-            let command = disabled ? i.executable : "/different/helper", arguments = i.arguments
-            i.run = { _, args, _, input in
-                calls += 1
-                XCTAssertEqual(args, ["mcp", "list", "--json"]); XCTAssertNil(input)
-                return try JSONSerialization.data(withJSONObject: [["name": "ui-review", "enabled": !disabled, "transport": ["command": command, "args": arguments]]])
-            }
-            let result = i.check(.codex, install: true)
-            XCTAssertFalse(result.healthy); XCTAssertFalse(result.canInstall); XCTAssertTrue(result.message.contains("未覆盖")); XCTAssertEqual(calls, 1)
+    func testCustomConfigurationNeverWritesOrLaunches() throws {
+        var i = installer()
+        i.run = { _, args, _, input in
+            XCTAssertEqual(args, ["mcp", "list", "--json"]); XCTAssertNil(input)
+            return try JSONSerialization.data(withJSONObject: [["name": "ui-review", "transport": ["command": "/different/helper"]]])
         }
+        let result = i.check(.codex, install: true)
+        XCTAssertFalse(result.canUpgrade); XCTAssertFalse(result.healthy)
+    }
+    func testCodexOldPathOffersUpgradeAndRechecksNewConfiguration() throws {
+        var i = installer()
+        var writes = 0
+        let valid = try fixture(motion: true), command = i.executable, arguments = i.arguments
+        i.run = { _, args, _, input in
+            if input != nil { return valid }
+            if args.prefix(2) == ["mcp", "add"] { writes += 1; return Data() }
+            return try JSONSerialization.data(withJSONObject: [["name": "ui-review", "enabled": writes > 0,
+                "transport": ["type": "stdio", "command": writes > 0 ? command : "/old/UI Review.app/ui-review-mcp", "args": arguments]]])
+        }
+        let detected = i.check(.codex, install: false)
+        XCTAssertTrue(detected.canUpgrade); XCTAssertEqual(detected.actionTitle, "一键升级"); XCTAssertEqual(writes, 0)
+        XCTAssertTrue(i.check(.codex, install: true).healthy)
+        XCTAssertFalse(i.check(.codex, install: false).canUpgrade)
+        XCTAssertEqual(writes, 1)
+    }
+    func testClaudeUpgradePreservesOtherFieldsAndBacksUpOriginal() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var i = installer(); i.environment["CLAUDE_CONFIG_DIR"] = root.path
+        let original = try JSONSerialization.data(withJSONObject: ["theme": "dark", "mcpServers": [
+            "other": ["command": "keep"], "ui-review": ["command": "/old/ui-review-mcp", "args": []]]])
+        try original.write(to: i.claudeConfig)
+        let valid = try fixture(motion: true)
+        i.run = { _, _, _, _ in valid }
+        XCTAssertTrue(i.check(.claude, install: false).canUpgrade)
+        XCTAssertEqual(try Data(contentsOf: i.claudeConfig), original)
+        XCTAssertTrue(i.check(.claude, install: true).healthy)
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: i.claudeConfig)) as? [String: Any])
+        XCTAssertEqual(saved["theme"] as? String, "dark")
+        XCTAssertEqual((saved["mcpServers"] as? [String: [String: Any]])?["other"]?["command"] as? String, "keep")
+        let backup = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first { $0.lastPathComponent.contains("backup") })
+        XCTAssertEqual(try Data(contentsOf: backup), original)
     }
     func testConfiguredButUnhealthyDoesNotReportSuccess() throws {
         var i = installer(); let command = i.executable, arguments = i.arguments

@@ -62,17 +62,37 @@ public struct Review: Codable, Identifiable, Equatable, Sendable {
     public let createdAt: Date
     public var updatedAt: Date
     public var screenshots: [Screenshot]
+    public var animations: [Animation] = []
+    public var videoAssets: [VideoAsset] = []
+    public var itemOrder: [ReviewItem] = []
 
     public init(id: UUID = UUID(), title: String, createdAt: Date = Date(), screenshots: [Screenshot] = []) {
         self.id = id; self.title = title; self.createdAt = createdAt
         self.updatedAt = createdAt; self.screenshots = screenshots
+        self.itemOrder = screenshots.map { ReviewItem(kind: .screenshot, id: $0.id) }
     }
 
-    public var issueCount: Int { screenshots.reduce(0) { $0 + $1.issues.count } }
+    public var issueCount: Int { screenshots.reduce(0) { $0 + $1.issues.count } + animations.reduce(0) { $0 + $1.issues.count } }
+    public mutating func reconcileOrder() {
+        let items = screenshots.map { ReviewItem(kind: .screenshot, id: $0.id) } + animations.map { ReviewItem(kind: .animation, id: $0.id) }
+        itemOrder = itemOrder.filter { items.contains($0) }
+        for item in items where !itemOrder.contains(item) { itemOrder.append(item) }
+    }
+    enum CodingKeys: String, CodingKey { case id, title, createdAt, updatedAt, screenshots, animations, videoAssets, itemOrder }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id); title = try c.decode(String.self, forKey: .title)
+        createdAt = try c.decode(Date.self, forKey: .createdAt); updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        screenshots = try c.decode([Screenshot].self, forKey: .screenshots)
+        animations = try c.decodeIfPresent([Animation].self, forKey: .animations) ?? []
+        videoAssets = try c.decodeIfPresent([VideoAsset].self, forKey: .videoAssets) ?? []
+        itemOrder = try c.decodeIfPresent([ReviewItem].self, forKey: .itemOrder) ?? screenshots.map { ReviewItem(kind: .screenshot, id: $0.id) }
+    }
 }
 
 public struct ReviewLibrary: Codable, Equatable, Sendable {
-    public var schemaVersion = 1
+    public var schemaVersion = 2
+    public var revision = UUID()
     public var currentReviewID: UUID?
     public var reviews: [Review]
 
@@ -80,6 +100,16 @@ public struct ReviewLibrary: Codable, Equatable, Sendable {
         self.currentReviewID = currentReviewID; self.reviews = reviews
     }
 
+    enum CodingKeys: String, CodingKey { case schemaVersion, revision, currentReviewID, reviews }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        guard (1...2).contains(schemaVersion) else { throw ReviewError.invalidData("数据版本不受支持，请升级 UI Review。") }
+        revision = schemaVersion == 2 ? try c.decode(UUID.self, forKey: .revision) : UUID()
+        currentReviewID = try c.decodeIfPresent(UUID.self, forKey: .currentReviewID)
+        reviews = try c.decode([Review].self, forKey: .reviews)
+        if schemaVersion == 2 { _ = try c.decode([RequiredV2Fields].self, forKey: .reviews) }
+    }
     public var currentReview: Review? { reviews.first { $0.id == currentReviewID } }
 }
 
@@ -103,4 +133,10 @@ public enum ReviewJSON {
     public static func decoder() -> JSONDecoder {
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601; return decoder
     }
+}
+
+private struct RequiredV2Fields: Decodable {
+    let animations: [Animation]
+    let videoAssets: [VideoAsset]
+    let itemOrder: [ReviewItem]
 }

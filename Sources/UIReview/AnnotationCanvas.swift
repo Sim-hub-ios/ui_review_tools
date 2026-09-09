@@ -36,6 +36,8 @@ final class CanvasView: NSView {
     var onDelete: (() -> Void)?
     var onTool: ((CanvasTool) -> Void)?
     var onPaste: (() -> Void)?
+    var onEscape: (() -> Void)?
+    var issueNumbers: [UUID: Int] = [:]
     private var start: CGPoint?
     private var initialRegion: Region?
     private var preview: Region?
@@ -83,7 +85,7 @@ final class CanvasView: NSView {
         image.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
         for (index, issue) in screenshot.issues.enumerated() {
             let region = draggingID == issue.id ? preview ?? issue.region : issue.region
-            drawRegion(region, number: index + 1, selected: issue.id == selectedID)
+            drawRegion(region, number: issueNumbers[issue.id] ?? index + 1, selected: issue.id == selectedID)
         }
         if draggingID == nil, let preview { drawRegion(preview, number: screenshot.issues.count + 1, selected: true) }
     }
@@ -166,7 +168,7 @@ final class CanvasView: NSView {
         case 51, 117:
             if event.modifierFlags.intersection([.command, .control, .option]).isEmpty { onDelete?() }
             else { super.keyDown(with: event) }
-        case 53: cancelDrag()
+        case 53: cancelDrag(); onEscape?()
         default:
             if let tool = CanvasTool.shortcut(for: event, isEditingText: false) {
                 onTool?(tool); return

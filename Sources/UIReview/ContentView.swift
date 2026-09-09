@@ -13,7 +13,9 @@ struct ContentView: View {
             HSplitView {
                 ScreenshotSidebar(store: store)
                     .frame(width: 232)
-                if let shot = store.screenshot {
+                if let animation = store.animation {
+                    MotionWorkspace(store: store, animation: animation)
+                } else if let shot = store.screenshot {
                     CanvasPanel(store: store, screenshot: shot)
                         .frame(minWidth: 430, maxWidth: .infinity, maxHeight: .infinity)
                     IssuePanel(store: store, screenshot: shot)
@@ -28,20 +30,22 @@ struct ContentView: View {
                 Image(systemName: store.loadFailed ? "exclamationmark.triangle" : "externaldrive")
                 Text(store.status).lineLimit(1)
                 Spacer()
-                if store.isBusy { ProgressView().controlSize(.small) }
+                if store.hasUnsavedChanges { Button("重试保存") { store.retrySave() } }
+                if store.isBusy { ProgressView().controlSize(.small); if store.importTask != nil { Button("取消") { store.importTask?.cancel() } } }
                 Button("MCP · 只读访问") { store.showIntegration = true }.buttonStyle(.plain)
                 Text("\(store.currentReview?.issueCount ?? 0) 个问题").monospacedDigit()
             }
             .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 32)
             .background(.bar)
         }
-        .frame(minWidth: 1000, minHeight: 640)
+        .frame(minWidth: 1100, minHeight: 760)
         .ignoresSafeArea(.container, edges: .top)
         .overlay { if targeted { RoundedRectangle(cornerRadius: 12).stroke(.blue, lineWidth: 3).padding(4).allowsHitTesting(false) } }
         .onDrop(of: [.fileURL, .png, .tiff, .image], isTargeted: $targeted, perform: handleDrop)
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("好") { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
+        .sheet(isPresented: $store.showHandoff) { HandoffView(store: store) }
         .sheet(isPresented: $store.showHistory) { HistoryView(store: store) }
         .sheet(isPresented: $store.showIntegration) { IntegrationView(store: store) }
         .sheet(isPresented: $store.showSimulator) { SimulatorPicker(store: store) }
@@ -71,80 +75,63 @@ struct ContentView: View {
 
 struct ScreenshotSidebar: View {
     @Bindable var store: ReviewStore
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var renaming: Screenshot?
+    @State private var renaming: ReviewItem?
     @State private var name = ""
-
-    private func color(_ dark: UInt32, light: Color) -> Color {
-        guard colorScheme == .dark else { return light }
-        return Color(red: Double((dark >> 16) & 255) / 255,
-                     green: Double((dark >> 8) & 255) / 255, blue: Double(dark & 255) / 255)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("当前 REVIEW").font(.system(size: 11))
-                .foregroundStyle(color(0x818792, light: .secondary))
-            Text(store.currentReview?.title ?? "截图").font(.system(size: 17)).lineLimit(1)
-                .foregroundStyle(color(0xE9EDF4, light: .primary))
-            Text("\(store.currentReview?.screenshots.count ?? 0) 张截图 · \(store.currentReview?.issueCount ?? 0) 个问题")
-                .font(.system(size: 12)).foregroundStyle(color(0xACB3C0, light: .secondary))
+            Text("当前 REVIEW").font(.caption2).foregroundStyle(.secondary)
+            Text(store.currentReview?.title ?? "素材").font(.headline).lineLimit(1)
+            Text("\(store.currentReview?.screenshots.count ?? 0) 张截图 · \(store.currentReview?.animations.count ?? 0) 段动画").font(.caption).foregroundStyle(.secondary)
             ScrollView {
-                LazyVStack(spacing: 18) {
-                    ForEach(Array((store.currentReview?.screenshots ?? []).enumerated()), id: \.element.id) { index, shot in
-                        let selected = store.selectedScreenshotID == shot.id
-                        Button { store.selectScreenshot(shot.id) } label: {
-                            VStack(alignment: .leading, spacing: 10) {
-                                if selected {
-                                    Group {
-                                        if let image = store.image(for: shot) {
-                                            Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
-                                        } else {
-                                            Label("图片文件缺失", systemImage: "photo.badge.exclamationmark")
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }.frame(maxWidth: .infinity).frame(height: 95).background(.white)
-                                }
-                                HStack(spacing: 0) {
-                                    Text(String(format: "%02d  ", index + 1)).fixedSize()
-                                    Text(shot.name).lineLimit(1).truncationMode(.middle)
-                                    Text(" · \(shot.issues.count) 个问题").fixedSize()
-                                }.font(.system(size: 12))
-                                    .foregroundStyle(color(selected ? 0x9DBDFF : 0xE9EDF4,
-                                                           light: selected ? .accentColor : .primary))
-                            }
-                            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                            .frame(height: selected ? 170 : 66, alignment: selected ? .top : .center)
-                            .background(color(selected ? 0x253C65 : 0x31353E,
-                                              light: selected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04)))
-                            .clipShape(.rect(cornerRadius: 10))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("截图 \(index + 1)，\(shot.name)，\(shot.issues.count) 个问题")
-                        .help("\(shot.name) · ⌘Delete 删除当前选中的截图及其问题 · ⌘Z 撤销")
-                        .contextMenu {
-                            Button("重命名…") { renaming = shot; name = shot.name }
-                            Button("删除截图及其问题（⌘Delete）", role: .destructive) { store.deleteScreenshot(shot.id) }
-                        }
-                    }
-                }.frame(maxWidth: .infinity)
-            }.scrollIndicators(.hidden).frame(maxHeight: .infinity)
-            Button { store.chooseFiles() } label: { Text("＋  添加截图") }
-                .buttonStyle(.plain).font(.system(size: 13))
-                .foregroundStyle(color(0x76A5FF, light: .accentColor)).disabled(store.loadFailed)
-            HStack(spacing: 16) {
+                LazyVStack(spacing: 12) {
+                    ForEach(store.currentReview?.itemOrder ?? [], id: \.self) { item in material(item) }
+                }
+            }.scrollIndicators(.hidden)
+            Button("＋ 导入素材") { store.chooseFiles() }.buttonStyle(.plain).foregroundStyle(.blue).disabled(store.loadFailed || store.isBusy)
+            HStack {
                 Button("历史 Review") { store.showHistory = true }
-                Button("开始新的 Review") { store.newReview() }.disabled(store.currentReview == nil)
-            }.buttonStyle(.plain).font(.system(size: 10))
-                .foregroundStyle(color(0x6D7380, light: .secondary))
-        }
-        .padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(color(0x272A30, light: Color(nsColor: .controlBackgroundColor)))
-        .alert("重命名截图", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("截图名称", text: $name)
+                Button("新建 Review") { store.newReview() }.disabled(store.currentReview == nil)
+            }.font(.caption2).buttonStyle(.plain).foregroundStyle(.secondary)
+        }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .alert("重命名素材", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("名称", text: $name)
             Button("取消", role: .cancel) { renaming = nil }
-            Button("保存") { if let shot = renaming { store.renameScreenshot(shot.id, name: name) }; renaming = nil }
+            Button("保存") {
+                if let item = renaming {
+                    if item.kind == .screenshot { store.renameScreenshot(item.id, name: name) }
+                    else { store.renameAnimation(item.id, name: name) }
+                }
+                renaming = nil
+            }
+        }
+    }
+    @ViewBuilder private func material(_ item: ReviewItem) -> some View {
+        if let shot = store.currentReview?.screenshots.first(where: { $0.id == item.id }) {
+            Button { store.selectScreenshot(shot.id) } label: {
+                VStack(alignment: .leading, spacing: 10) {
+                    if store.selectedScreenshotID == shot.id, let image = store.image(for: shot) {
+                        Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 95)
+                    }
+                    Label(shot.name, systemImage: "photo").lineLimit(1)
+                    Text("\(shot.issues.count) 个问题").font(.caption).foregroundStyle(.secondary)
+                }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(store.selectedScreenshotID == shot.id ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            }.buttonStyle(.plain).contextMenu {
+                Button("重命名…") { renaming = item; name = shot.name }
+                Button("删除截图及问题", role: .destructive) { store.deleteScreenshot(shot.id) }
+            }
+        } else if let animation = store.currentReview?.animations.first(where: { $0.id == item.id }) {
+            Button { store.selectAnimation(animation.id) } label: {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(animation.name, systemImage: "video").lineLimit(1)
+                    Text("\(animation.issues.count) 个问题").font(.caption).foregroundStyle(.secondary)
+                }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(store.selectedAnimationID == animation.id ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            }.buttonStyle(.plain).contextMenu {
+                Button("重命名…") { renaming = item; name = animation.name }
+                Button("删除动画及问题", role: .destructive) { store.deleteAnimation(animation.id) }
+            }
         }
     }
 }
@@ -155,13 +142,13 @@ struct EmptyReviewView: View {
         VStack(spacing: 22) {
             Spacer()
             Image(systemName: "rectangle.dashed.badge.record").font(.system(size: 42, weight: .light)).foregroundStyle(.blue)
-            Text("从一张截图开始").font(.system(size: 28, weight: .semibold))
+            Text("让反馈落在具体画面上").font(.system(size: 28, weight: .semibold))
             Text("框出问题，说清修改要求，交给你的 Coding Agent。")
                 .foregroundStyle(.secondary)
             VStack(spacing: 18) {
-                Text("将图片拖到这里").font(.title3)
+                Text("将截图或录屏拖到这里").font(.title3)
                 Text("也可以按 ⌘V 粘贴剪贴板图片").foregroundStyle(.secondary)
-                Button("选择图片文件") { store.chooseFiles() }.buttonStyle(.borderedProminent).controlSize(.large)
+                Button("选择素材文件") { store.chooseFiles() }.buttonStyle(.borderedProminent).controlSize(.large)
             }
             .frame(width: 480, height: 190).background(.background)
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.secondary.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6, 5])))
@@ -169,7 +156,7 @@ struct EmptyReviewView: View {
                 Button("截取屏幕") { store.captureScreen() }
                 Button("从 iOS Simulator 获取") { store.chooseSimulator() }
             }.buttonStyle(.plain).foregroundStyle(.blue)
-            Text("PNG、JPEG、HEIC · 首次导入后自动保存").font(.caption).foregroundStyle(.tertiary)
+            Text("图片与 MP4 / MOV 录屏 · 首次导入后自动保存").font(.caption).foregroundStyle(.tertiary)
             Spacer()
         }.disabled(store.isBusy || store.loadFailed).frame(maxWidth: .infinity).background(Color(nsColor: .windowBackgroundColor))
     }
