@@ -1,5 +1,14 @@
 #!/bin/bash
 set -euo pipefail
+
+# Previously signed/notarized binaries cannot be overwritten in place
+# (cp: Operation not permitted). Unlink the bundle, then copy into a new tree.
+prepare_app_bundle() {
+  local app_dir="$1"
+  rm -rf "$app_dir"
+  mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$app_dir/Contents/Frameworks"
+}
+
 cd "$(dirname "$0")/.."
 configuration="${1:-debug}"
 case "$configuration" in debug|release) ;; *) echo "Usage: $0 [debug|release]" >&2; exit 2;; esac
@@ -9,7 +18,7 @@ swift_options=(--cache-path "$PWD/.build/cache" --config-path "$PWD/.build/confi
 swift build "${swift_options[@]}" -c "$configuration"
 bin_dir="$(swift build "${swift_options[@]}" -c "$configuration" --show-bin-path)"
 app_dir="$PWD/build/UI Review.app"
-mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$app_dir/Contents/Frameworks"
+prepare_app_bundle "$app_dir"
 cp "$bin_dir/UIReview" "$app_dir/Contents/MacOS/UIReview"
 cp "$bin_dir/ui-review-mcp" "$app_dir/Contents/MacOS/ui-review-mcp"
 cp Resources/Info.plist "$app_dir/Contents/Info.plist"
