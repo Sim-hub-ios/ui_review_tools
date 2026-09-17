@@ -131,7 +131,7 @@ if [ -z "$generate_appcast" ] || [ ! -x "$generate_appcast" ]; then
 fi
 "$generate_appcast" \
   --account ui-review \
-  --download-url-prefix "https://github.com/bay2/ui_review_tools/releases/download/v$version/" \
+  --download-url-prefix "https://github.com/Sim-hub-ios/ui_review_tools/releases/download/v$version/" \
   --maximum-deltas 0 \
   -o "$sparkle_dir/appcast.xml" \
   "$sparkle_dir"
