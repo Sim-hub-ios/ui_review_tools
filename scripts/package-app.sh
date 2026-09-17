@@ -86,6 +86,7 @@ pkgbuild \
   --install-location /Applications \
   --root "$root_dir" \
   --component-plist "$plist_path" \
+  --scripts "$PWD/scripts/pkg" \
   --sign "$pkg_identity" \
   "$pkg_path"
 
@@ -100,6 +101,10 @@ fi
 if ! grep -q 'install-location="/Applications"' "$info_dir/PackageInfo"; then
   echo "Package install-location is not /Applications." >&2
   cat "$info_dir/PackageInfo" >&2
+  exit 1
+fi
+if ! xar -tf "$pkg_path" | grep -qx Scripts; then
+  echo "Package is missing Scripts/postinstall." >&2
   exit 1
 fi
 

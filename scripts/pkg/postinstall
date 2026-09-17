@@ -1,0 +1,74 @@
+#!/bin/bash
+set -euo pipefail
+
+APP_PATH="${APP_PATH:-/Applications/UI Review.app}"
+PROCESS_NAME="${PROCESS_NAME:-UIReview}"
+QUIT_WAIT_TRIES="${QUIT_WAIT_TRIES:-20}"
+QUIT_WAIT_SLEEP="${QUIT_WAIT_SLEEP:-0.25}"
+
+console_user() {
+  /usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true
+}
+
+user_uid() {
+  /usr/bin/id -u "$1"
+}
+
+is_gui_user() {
+  local user="$1"
+  [ -n "$user" ] && [ "$user" != "root" ] && [ "$user" != "loginwindow" ]
+}
+
+is_process_running() {
+  local uid="$1"
+  /usr/bin/pgrep -u "$uid" -x "$PROCESS_NAME" >/dev/null 2>&1
+}
+
+signal_process() {
+  local sig="$1"
+  local uid="$2"
+  /usr/bin/pkill -"$sig" -u "$uid" -x "$PROCESS_NAME" 2>/dev/null || true
+}
+
+wait_until_quit() {
+  local uid="$1"
+  local n=0
+  while [ "$n" -lt "$QUIT_WAIT_TRIES" ]; do
+    is_process_running "$uid" || return 0
+    /bin/sleep "$QUIT_WAIT_SLEEP"
+    n=$((n + 1))
+  done
+  return 1
+}
+
+quit_app() {
+  local uid="$1"
+  signal_process TERM "$uid"
+  wait_until_quit "$uid" && return 0
+  signal_process KILL "$uid"
+}
+
+open_app() {
+  local user="$1"
+  local uid="$2"
+  /bin/launchctl asuser "$uid" /usr/bin/sudo -u "$user" /usr/bin/open "$APP_PATH"
+}
+
+relaunch_after_install() {
+  local user uid
+  user="$(console_user)"
+  is_gui_user "$user" || return 0
+  uid="$(user_uid "$user")"
+  if is_process_running "$uid"; then
+    quit_app "$uid" || true
+  fi
+  open_app "$user" "$uid" || true
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  if [ -n "${2:-}" ] && [ -d "$2/UI Review.app" ]; then
+    APP_PATH="$2/UI Review.app"
+  fi
+  relaunch_after_install || true
+  exit 0
+fi
