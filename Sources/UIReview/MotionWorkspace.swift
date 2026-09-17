@@ -144,14 +144,8 @@ struct MotionWorkspace: View {
           Text("当前帧时间点").foregroundStyle(.secondary)
         }
         Spacer()
-        Button("＋ 添加问题") { store.addMotionIssue(target: session.target) }.disabled(
-          session.loading || session.playing || !validTarget)
       }.textFieldStyle(.roundedBorder)
     }.font(.caption).padding(16).background(.background).disabled(session.frames.isEmpty)
-  }
-  private var validTarget: Bool {
-    guard let asset = session.asset else { return false }
-    return (try? session.target.validate(duration: asset.duration)) != nil
   }
 }
 
@@ -183,25 +177,7 @@ struct MotionCanvas: NSViewRepresentable {
     view.zoom = 0
     view.onSelect = { id in if let id { store.selectedIssueID = id } }
     view.onCreate = { rect in
-      if store.motionIssue == nil {
-        store.addMotionIssue(target: target.contains(time) ? target : .point(time))
-      }
-      guard let issue = store.motionIssue else { return }
-      guard issue.target.contains(time) else {
-        store.errorMessage = "当前帧不在问题时间内，请查看标注帧或返回问题范围。"
-        return
-      }
-      if issue.region != nil && !store.replacingMotionRegion {
-        store.errorMessage = "已有区域，请使用右侧的重新框选。"
-        return
-      }
-      store.updateMotionIssue(issue.id) {
-        $0.region = FrameRegion(
-          assetID: asset.id, actualTime: time, frameWidth: asset.displayWidth,
-          frameHeight: asset.displayHeight, pixelRect: rect)
-      }
-      store.replacingMotionRegion = false
-      store.tool = .select
+      store.applyMotionBoxSelection(rect, asset: asset, time: time, target: target)
     }
     view.onUpdate = { id, rect in
       store.updateMotionIssue(id) {
@@ -298,7 +274,10 @@ struct MotionIssuePanel: View {
               Button("移除区域") { store.updateMotionIssue(issue.id) { $0.region = nil } }
             }
           } else {
-            Button("在当前帧框选") { store.tool = .rectangle }
+            Button("在当前帧框选") {
+              store.replacingMotionRegion = true
+              store.tool = .rectangle
+            }
           }
           if issue.referenceSnapshot != store.animation?.activeReference {
             Text("此问题使用之前的参考关系").font(.caption).foregroundStyle(.orange)
@@ -333,7 +312,7 @@ struct MotionIssuePanel: View {
             store.mutateAnimation("删除问题") { $0.issues.removeAll { $0.id == issue.id } }
           }
         } else {
-          Text("选择时间段或框选当前帧，然后填写修改要求。").foregroundStyle(.secondary)
+          Text("框选当前帧即可新增问题，然后填写修改要求。").foregroundStyle(.secondary)
         }
       }.padding(20)
     }.background(.background).textFieldStyle(.roundedBorder)

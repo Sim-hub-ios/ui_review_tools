@@ -1,0 +1,4 @@
+/* App is Chinese-only; this lproj keeps system strings on zh-Hans. */
+CFBundleDisplayName = "UI Review";
+CFBundleName = "UI Review";
+NSScreenCaptureUsageDescription = "截取你选择的屏幕区域，用于本机 UI 问题标注。";

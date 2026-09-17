@@ -2,6 +2,8 @@ import AppKit
 import Sparkle
 import SwiftUI
 
+private let appLanguageBootstrap: Void = AppLanguage.apply()
+
 @main
 struct UIReviewApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -10,6 +12,7 @@ struct UIReviewApp: App {
     @State private var store = ReviewStore()
 
     init() {
+        _ = appLanguageBootstrap
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     }
 
@@ -35,7 +38,7 @@ struct UIReviewApp: App {
                 Button("撤销") { store.undo() }.keyboardShortcut("z").disabled(!store.canUndo)
                 Button("重做") { store.redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!store.canRedo)
             }
-            CommandGroup(after: .pasteboard) {
+            CommandGroup(replacing: .pasteboard) {
                 Button("粘贴图片") { store.pasteImage() }.keyboardShortcut("v", modifiers: [.command, .shift])
             }
             CommandMenu("Review") {
@@ -59,6 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var showWindow: (() -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppLanguage.apply()
+        AppMenuPolicy.install()
         NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
     }
 

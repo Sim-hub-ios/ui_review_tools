@@ -14,6 +14,8 @@ cp "$bin_dir/UIReview" "$app_dir/Contents/MacOS/UIReview"
 cp "$bin_dir/ui-review-mcp" "$app_dir/Contents/MacOS/ui-review-mcp"
 cp Resources/Info.plist "$app_dir/Contents/Info.plist"
 cp Resources/AppIcon.icns "$app_dir/Contents/Resources/AppIcon.icns"
+mkdir -p "$app_dir/Contents/Resources/zh-Hans.lproj"
+cp Resources/zh-Hans.lproj/InfoPlist.strings "$app_dir/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
 
 sparkle_framework=""
 for candidate in "$PWD"/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-*/Sparkle.framework; do

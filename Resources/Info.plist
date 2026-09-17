@@ -3,12 +3,14 @@
 <plist version="1.0"><dict>
 <key>CFBundleName</key><string>UI Review</string>
 <key>CFBundleDisplayName</key><string>UI Review</string>
+<key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
+<key>CFBundleLocalizations</key><array><string>zh-Hans</string></array>
 <key>CFBundleExecutable</key><string>UIReview</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleIdentifier</key><string>dev.uireview.mac</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>2.0.4</string>
-<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleVersion</key><string>7</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSPrincipalClass</key><string>NSApplication</string>

@@ -110,6 +110,33 @@ extension ReviewStore {
     mutateAnimation("添加动画问题") { $0.issues.append(issue) }
     selectedIssueID = issue.id
   }
+  func applyMotionBoxSelection(
+    _ rect: Region, asset: VideoAsset, time: MediaTime, target: TemporalTarget
+  ) {
+    if replacingMotionRegion, let issue = motionIssue {
+      guard issue.target.contains(time) else {
+        errorMessage = "当前帧不在问题时间内，请查看标注帧或返回问题范围。"
+        return
+      }
+      updateMotionIssue(issue.id) {
+        $0.region = FrameRegion(
+          assetID: asset.id, actualTime: time, frameWidth: asset.displayWidth,
+          frameHeight: asset.displayHeight, pixelRect: rect)
+      }
+      replacingMotionRegion = false
+      tool = .select
+      return
+    }
+    addMotionIssue(target: target.contains(time) ? target : .point(time))
+    guard let issue = motionIssue else { return }
+    updateMotionIssue(issue.id) {
+      $0.region = FrameRegion(
+        assetID: asset.id, actualTime: time, frameWidth: asset.displayWidth,
+        frameHeight: asset.displayHeight, pixelRect: rect)
+    }
+    replacingMotionRegion = false
+    tool = .select
+  }
   func updateMotionIssue(_ id: UUID, key: String? = nil, _ change: (inout AnimationIssue) -> Void) {
     mutateAnimation("编辑动画问题", key: key) { animation in
       guard let i = animation.issues.firstIndex(where: { $0.id == id }) else { return }
