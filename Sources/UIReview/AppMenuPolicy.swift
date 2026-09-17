@@ -64,14 +64,17 @@ enum AppMenuPolicy {
         "cut:", "copy:", "paste:", "delete:", "selectAll:",
         "pasteAsPlainText:", "pasteAsRichText:", "pasteAndMatchStyle:",
         "orderFrontCharacterPalette:",
+        "performClose:",
     ]
 
     private static let blockedTitles: Set<String> = [
         "Cut", "Copy", "Paste", "Delete", "Select All",
         "Paste and Match Style", "Paste and Match Formatting",
         "AutoFill", "Start Dictation...", "Emoji & Symbols",
+        "Close", "Close Window",
         "剪切", "拷贝", "复制", "粘贴", "删除", "全选",
         "粘贴并匹配样式", "粘贴并匹配格式",
         "自动填充", "开始听写...", "表情与符号",
+        "关闭", "关闭窗口",
     ]
 }

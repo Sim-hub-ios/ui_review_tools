@@ -28,6 +28,23 @@ final class AppMenuPolicyTests: XCTestCase {
         XCTAssertFalse(AppMenuPolicy.isBlocked(item("删除截图及问题")))
     }
 
+    func testBlocksWindowCloseInFileMenu() {
+        XCTAssertTrue(AppMenuPolicy.isBlocked(item("Close", #selector(NSWindow.performClose(_:)))))
+        XCTAssertTrue(AppMenuPolicy.isBlocked(item("关闭", #selector(NSWindow.performClose(_:)))))
+        XCTAssertTrue(AppMenuPolicy.isBlocked(item("Close Window")))
+        XCTAssertTrue(AppMenuPolicy.isBlocked(item("关闭窗口")))
+    }
+
+    func testKeepsFileMenuReviewActions() {
+        XCTAssertFalse(AppMenuPolicy.isBlocked(item("开始新的 Review")))
+        XCTAssertFalse(AppMenuPolicy.isBlocked(item("导入素材...")))
+        XCTAssertFalse(AppMenuPolicy.isBlocked(item("导入素材…")))
+        XCTAssertFalse(AppMenuPolicy.isBlocked(item("导出 Review...")))
+        XCTAssertFalse(AppMenuPolicy.isBlocked(item("导出 Review…")))
+        XCTAssertFalse(AppMenuPolicy.isBlocked(item("退出")))
+        XCTAssertFalse(AppMenuPolicy.isBlocked(item("Quit")))
+    }
+
     func testSanitizeRemovesBlockedItemsAndExtraSeparators() {
         let menu = NSMenu()
         menu.addItem(item("撤销"))
@@ -48,6 +65,20 @@ final class AppMenuPolicyTests: XCTestCase {
 
         XCTAssertEqual(menu.items.map(\.title), ["撤销", "重做", "", "粘贴图片"])
         XCTAssertEqual(menu.items.filter(\.isSeparatorItem).count, 1)
+    }
+
+    func testSanitizeRemovesCloseAndTrailingSeparatorFromFileMenu() {
+        let menu = NSMenu()
+        menu.addItem(item("开始新的 Review"))
+        menu.addItem(item("导入素材…"))
+        menu.addItem(item("导出 Review…"))
+        menu.addItem(.separator())
+        menu.addItem(item("关闭", #selector(NSWindow.performClose(_:))))
+
+        AppMenuPolicy.sanitize(menu)
+
+        XCTAssertEqual(menu.items.map(\.title), ["开始新的 Review", "导入素材…", "导出 Review…"])
+        XCTAssertFalse(menu.items.contains(where: \.isSeparatorItem))
     }
 
     func testApplyLocksChineseAndHidesSystemTextExtras() throws {

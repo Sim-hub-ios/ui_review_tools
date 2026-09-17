@@ -34,6 +34,7 @@ struct UIReviewApp: App {
                 Button("导出 Review…") { store.exportReview() }.keyboardShortcut("e", modifiers: [.command, .shift])
                     .disabled(store.currentReview == nil)
             }
+            CommandGroup(replacing: .saveItem) {}
             CommandGroup(replacing: .undoRedo) {
                 Button("撤销") { store.undo() }.keyboardShortcut("z").disabled(!store.canUndo)
                 Button("重做") { store.redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!store.canRedo)
