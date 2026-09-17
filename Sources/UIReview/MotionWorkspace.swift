@@ -51,7 +51,7 @@ struct MotionWorkspace: View {
             Text("当前实现 · \(session.time.seconds, specifier: "%.3f") s").font(.caption)
               .foregroundStyle(.secondary)
             if session.playing {
-              MotionPlayerView(player: session.player, onPaste: { store.pasteReferenceVideo() })
+              MotionPlayerView(player: session.player, onPaste: { store.pasteClipboard() })
             } else if !session.loading, let asset = session.asset, let image = session.image {
               MotionCanvas(
                 store: store, asset: asset, time: session.time, image: image, target: session.target
@@ -224,7 +224,7 @@ struct MotionCanvas: NSViewRepresentable {
         ($0.element.id, $0.offset + 1)
       })
     view.onTool = { store.tool = $0 }
-    view.onPaste = { store.pasteReferenceVideo() }
+    view.onPaste = { store.pasteClipboard() }
     view.needsDisplay = true
   }
 }

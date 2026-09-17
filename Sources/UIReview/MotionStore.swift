@@ -81,7 +81,7 @@ extension ReviewStore {
       }
     }
   }
-  /// Canvas-only paste: reuse reference import and its explicit alignment step.
+  /// Import one MP4/MOV as the current animation's unlinked reference.
   func pasteReferenceVideo(from board: NSPasteboard = .general) {
     guard let animation, !isBusy, !loadFailed, pendingReferenceID == nil else { return }
     guard animation.activeReference == nil else {

@@ -19,7 +19,7 @@ struct AnnotationCanvas: NSViewRepresentable {
         view.onUpdate = { store.updateRegion($0, region: $1) }
         view.onDelete = { if let id = store.selectedIssueID { store.deleteIssue(id) } }
         view.onTool = { store.tool = $0 }
-        view.onPaste = { store.pasteImage() }
+        view.onPaste = { store.pasteClipboard() }
         view.needsDisplay = true
     }
 }

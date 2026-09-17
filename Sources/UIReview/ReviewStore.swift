@@ -24,6 +24,20 @@ enum ScreenshotShortcut {
     }
 }
 
+enum ClipboardPaste {
+    enum Action: Equatable { case materials, referenceVideo, empty }
+
+    static func action(fileURLs: [URL], hasImageData: Bool, hasSelectedAnimation: Bool) -> Action {
+        let videos = fileURLs.filter {
+            $0.isFileURL && ["mp4", "mov"].contains($0.pathExtension.lowercased())
+        }
+        let others = fileURLs.filter { $0.isFileURL && !videos.contains($0) }
+        if !others.isEmpty { return .materials }
+        if !videos.isEmpty { return hasSelectedAnimation ? .referenceVideo : .materials }
+        return hasImageData ? .materials : .empty
+    }
+}
+
 @MainActor @Observable
 final class ReviewStore {
     let repository: ReviewRepository
@@ -319,8 +333,18 @@ final class ReviewStore {
         if panel.runModal() == .OK { importFiles(panel.urls) }
     }
 
-    func pasteImage() {
-        let board = NSPasteboard.general
+    func pasteClipboard(from board: NSPasteboard = .general) {
+        let urls = (board.readObjects(forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []).filter(\.isFileURL)
+        let hasImageData = board.data(forType: .png) != nil || board.data(forType: .tiff) != nil
+        switch ClipboardPaste.action(fileURLs: urls, hasImageData: hasImageData, hasSelectedAnimation: animation != nil) {
+        case .materials: pasteImage(from: board)
+        case .referenceVideo: pasteReferenceVideo(from: board)
+        case .empty: status = "剪贴板中没有图片"
+        }
+    }
+
+    func pasteImage(from board: NSPasteboard = .general) {
         if let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
             importFiles(urls); return
         }
