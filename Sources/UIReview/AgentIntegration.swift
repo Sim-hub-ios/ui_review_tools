@@ -3,9 +3,15 @@ import Observation
 import Darwin
 
 enum AgentClient: String, CaseIterable, Identifiable {
-    case codex, claude
+    case codex, claude, cursor
     var id: String { rawValue }
-    var title: String { self == .codex ? "Codex" : "Claude Code" }
+    var title: String {
+        switch self {
+        case .codex: return "Codex"
+        case .claude: return "Claude Code"
+        case .cursor: return "Cursor"
+        }
+    }
 }
 
 struct AgentInstallationState {
@@ -79,13 +85,18 @@ struct AgentInstaller {
     func findCLI(_ client: AgentClient) -> String? {
         if let locateCLI { return locateCLI(client) }
         var candidates = (processEnvironment["PATH"] ?? "").split(separator: ":").map { "\($0)/\(client.rawValue)" }
-        if client == .codex { candidates += ["/Applications/ChatGPT.app/Contents/Resources/codex", "/Applications/Codex.app/Contents/Resources/codex"] }
+        // Desktop binaries avoid npm launchers depending on the PATH-selected Node architecture.
+        if client == .codex {
+            candidates = ["/Applications/ChatGPT.app/Contents/Resources/codex", "/Applications/Codex.app/Contents/Resources/codex"] + candidates
+        }
         return candidates.first { $0.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: $0) }
     }
     var claudeConfig: URL {
         if let path = environment["CLAUDE_CONFIG_DIR"], !path.isEmpty { return URL(fileURLWithPath: path).appendingPathComponent(".claude.json") }
         return home.appendingPathComponent(".claude.json")
     }
+    var cursorConfig: URL { home.appendingPathComponent(".cursor/mcp.json") }
+
     func configuration(_ client: AgentClient, cli: String) throws -> [String: Any]? {
         if client == .codex {
             let data = try run(cli, ["mcp", "list", "--json"], processEnvironment, nil)
@@ -97,9 +108,10 @@ struct AgentInstaller {
             config["enabled"] = server["enabled"]
             return config
         }
-        guard FileManager.default.fileExists(atPath: claudeConfig.path) else { return nil }
-        guard let root = try JSONSerialization.jsonObject(with: Data(contentsOf: claudeConfig)) as? [String: Any] else {
-            throw AgentIntegrationError(message: "Claude Code 配置格式错误，未修改配置。")
+        let file = client == .cursor ? cursorConfig : claudeConfig
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        guard let root = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any] else {
+            throw AgentIntegrationError(message: "\(client.title) 配置格式错误，未修改配置。")
         }
         if let servers = root["mcpServers"] {
             guard let entries = servers as? [String: Any] else { throw AgentIntegrationError(message: "MCP 配置格式错误，未修改配置。") }
@@ -131,15 +143,19 @@ struct AgentInstaller {
     }
     func installationArguments(_ client: AgentClient) throws -> [String] {
         if client == .codex { return ["mcp", "add", "ui-review", "--", executable] + arguments }
+        guard client == .claude else { throw AgentIntegrationError(message: "Cursor 使用 JSON 配置，无需命令行安装。") }
         let data = try JSONSerialization.data(withJSONObject: ["type": "stdio", "command": executable, "args": arguments])
         return ["mcp", "add-json", "--scope", "user", "ui-review", String(decoding: data, as: UTF8.self)]
     }
-    /// Preserve every unrelated JSON field, including fields from newer Claude versions.
     func installClaude(replacing expected: [String: Any]? = nil) throws {
-        let file = claudeConfig.resolvingSymlinksInPath(), fm = FileManager.default
+        try installJSON(at: claudeConfig, replacing: expected)
+    }
+    /// Preserve unrelated JSON fields, permissions and a backup for JSON-based clients.
+    func installJSON(at configURL: URL, replacing expected: [String: Any]? = nil) throws {
+        let file = configURL.resolvingSymlinksInPath(), fm = FileManager.default
         let previous = fm.fileExists(atPath: file.path) ? try Data(contentsOf: file) : nil
         var root = try previous.map { try JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
-        guard root != nil else { throw AgentIntegrationError(message: "Claude 配置格式错误，未修改。") }
+        guard root != nil else { throw AgentIntegrationError(message: "客户端配置格式错误，未修改。") }
         if let existing = root?["mcpServers"], !(existing is [String: Any]) {
             throw AgentIntegrationError(message: "MCP 配置格式错误，未修改。")
         }
@@ -163,7 +179,8 @@ struct AgentInstaller {
         guard rename(temporary.path, file.path) == 0 else { throw AgentIntegrationError(message: "无法替换客户端配置，请检查目录权限。") }
     }
     func check(_ client: AgentClient, install: Bool) -> AgentInstallationState {
-        guard let cli = findCLI(client) else { return .init(message: "未找到客户端命令行工具，请先安装 \(client.title) 或使用手动配置。") }
+        let locatedCLI = client == .cursor ? "" : findCLI(client)
+        guard let cli = locatedCLI else { return .init(message: "未找到客户端命令行工具，请先安装 \(client.title) 或使用手动配置。") }
         guard FileManager.default.isExecutableFile(atPath: executable) else {
             return .init(message: "未找到包内 MCP 服务，请使用完整的 UI Review.app。")
         }
@@ -184,7 +201,8 @@ struct AgentInstaller {
             }
             if existing == nil || upgrade {
                 guard install else { return .init(message: "尚未安装 UI Review MCP", canInstall: true) }
-                if client == .claude { try installClaude(replacing: existing) }
+                if client == .cursor { try installJSON(at: cursorConfig, replacing: existing) }
+                else if client == .claude { try installClaude(replacing: existing) }
                 else {
                     let folder = environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".codex")
                     let config = folder.appendingPathComponent("config.toml")

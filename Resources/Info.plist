@@ -7,12 +7,16 @@
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleIdentifier</key><string>dev.uireview.mac</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>2.0.3</string>
-<key>CFBundleVersion</key><string>5</string>
+<key>CFBundleShortVersionString</key><string>2.0.4</string>
+<key>CFBundleVersion</key><string>6</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>NSScreenCaptureUsageDescription</key><string>截取你选择的屏幕区域，用于本机 UI 问题标注。</string>
+<key>SUFeedURL</key><string>https://github.com/bay2/ui_review_tools/releases/latest/download/appcast.xml</string>
+<key>SUPublicEDKey</key><string>CuCpl7h3fxGnf4Ch8ViUkY4Qw/jjnQlPg9EtUVHokuA=</string>
+<key>SUEnableAutomaticChecks</key><true/>
+<key>SUAutomaticallyUpdate</key><false/>
 <key>CFBundleDocumentTypes</key><array><dict>
 <key>CFBundleTypeName</key><string>Image</string>
 <key>CFBundleTypeRole</key><string>Viewer</string>

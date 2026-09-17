@@ -14,6 +14,23 @@ final class AgentIntegrationTests: XCTestCase {
     private func installer() -> AgentInstaller {
         AgentInstaller(executable: "/usr/bin/true", dataDirectory: "/tmp/review with spaces/中文", environment: [:], home: URL(fileURLWithPath: "/tmp/UIReview-mock-home-unused"), locateCLI: { _ in "/usr/bin/true" })
     }
+    func testCodexDesktopCLIIsPreferredOverBrokenPATHLauncher() throws {
+        guard let desktop = [
+            "/Applications/ChatGPT.app/Contents/Resources/codex",
+            "/Applications/Codex.app/Contents/Resources/codex"
+        ].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            throw XCTSkip("Requires an installed Codex desktop CLI")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let launcher = root.appendingPathComponent("codex")
+        try Data("#!/bin/sh\nexit 1\n".utf8).write(to: launcher)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: launcher.path)
+        let i = AgentInstaller(executable: "/usr/bin/true", dataDirectory: root.path,
+                               environment: ["PATH": root.path], home: root)
+        XCTAssertEqual(i.findCLI(.codex), desktop)
+    }
     func testArgumentArraysPreserveSpacesAndSpecialCharacters() throws {
         var i = installer()
         i = AgentInstaller(executable: "/Applications/UI Review $test.app/helper", dataDirectory: "/tmp/中文 \"quoted\"")
@@ -115,6 +132,60 @@ final class AgentIntegrationTests: XCTestCase {
         XCTAssertTrue(i.matches(config))
         let mode = try FileManager.default.attributesOfItem(atPath: i.claudeConfig.path)[.posixPermissions] as? NSNumber
         XCTAssertEqual(mode?.intValue, 0o600)
+    }
+    func testCursorInstallWithoutCLICreatesPrivateConfigAndIsIdempotent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var i = installer(); i.home = root
+        i.locateCLI = { _ in XCTFail("Cursor must not require a CLI"); return nil }
+        let reply = try fixture(motion: true)
+        var probes = 0
+        i.run = { _, _, _, input in XCTAssertNotNil(input); probes += 1; return reply }
+        XCTAssertTrue(i.check(.cursor, install: false).canInstall)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: i.cursorConfig.path))
+        XCTAssertEqual(probes, 0)
+        XCTAssertTrue(i.check(.cursor, install: true).healthy)
+        XCTAssertTrue(i.matches(try XCTUnwrap(i.configuration(.cursor, cli: ""))))
+        let saved = try Data(contentsOf: i.cursorConfig)
+        XCTAssertTrue(i.check(.cursor, install: true).healthy)
+        XCTAssertEqual(try Data(contentsOf: i.cursorConfig), saved)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: i.cursorConfig.deletingLastPathComponent().path), ["mcp.json"])
+        let mode = try FileManager.default.attributesOfItem(atPath: i.cursorConfig.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue, 0o600)
+    }
+    func testCursorUpgradePreservesOtherConfigAndBacksUpOriginal() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var i = installer(); i.home = root
+        let folder = i.cursorConfig.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let original = try JSONSerialization.data(withJSONObject: ["custom": ["keep": true], "mcpServers": [
+            "other": ["command": "keep"], "ui-review": ["command": "/old/ui-review-mcp", "args": []]]])
+        try original.write(to: i.cursorConfig)
+        let reply = try fixture(motion: true)
+        i.run = { _, _, _, input in XCTAssertNotNil(input); return reply }
+        XCTAssertTrue(i.check(.cursor, install: false).canUpgrade)
+        XCTAssertEqual(try Data(contentsOf: i.cursorConfig), original)
+        XCTAssertTrue(i.check(.cursor, install: true).healthy)
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: i.cursorConfig)) as? [String: Any])
+        XCTAssertEqual(saved["custom"] as? [String: Bool], ["keep": true])
+        XCTAssertEqual((saved["mcpServers"] as? [String: [String: Any]])?["other"]?["command"] as? String, "keep")
+        let backup = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil).first { $0.lastPathComponent.contains("backup") })
+        XCTAssertEqual(try Data(contentsOf: backup), original)
+    }
+    func testCursorRejectsMalformedAndCustomConfigurationsWithoutWritingOrLaunching() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var i = installer(); i.home = root
+        try FileManager.default.createDirectory(at: i.cursorConfig.deletingLastPathComponent(), withIntermediateDirectories: true)
+        i.run = { _, _, _, _ in XCTFail("Must not launch for invalid or custom config"); return Data() }
+        for source in ["{bad", "[]", "{\"mcpServers\":[]}", "{\"mcpServers\":{\"ui-review\":false}}",
+                       "{\"mcpServers\":{\"ui-review\":{\"command\":\"/custom/helper\"}}}"] {
+            let original = Data(source.utf8)
+            try original.write(to: i.cursorConfig)
+            XCTAssertFalse(i.check(.cursor, install: true).healthy)
+            XCTAssertEqual(try Data(contentsOf: i.cursorConfig), original)
+        }
     }
     func testProbeRejectsWrongProtocolMissingToolsAndNonReadOnlyTools() throws {
         let good = try fixture()

@@ -4,18 +4,25 @@
 
 截图或录屏 → 框选与时间标记 → 评论 → 通过只读 MCP 或文件导出交给 Coding Agent。
 
-当前开发版 **2.0.3**：修复名称输入框在点击侧栏或工作区后仍占用键盘焦点的问题；点击非文本区域结束编辑，输入框之间正常切换。更新 App 后请退出并重新打开。
+当前开发版 **2.0.3**：修复名称输入框在点击侧栏或工作区后仍占用键盘焦点的问题；点击非文本区域结束编辑，输入框之间正常切换。已接入 Sparkle；从 GitHub Releases 安装带 Sparkle 的版本后，应用会自动检查更新。当前若还没有 Release，检查更新会安静失败。
 
 ## 构建与运行
 
-需要 macOS 14+、Xcode 16+（已选择 Command Line Tools）。当前工程使用 Swift Package，无第三方依赖。
+需要 macOS 14+、Xcode 16+（已选择 Command Line Tools）。当前工程使用 Swift Package。检查更新使用 [Sparkle](https://sparkle-project.org/)（MIT）。
 
 ```sh
 bash scripts/build-app.sh
 open 'build/UI Review.app'
 ```
 
-发布优化构建：`bash scripts/build-app.sh release`。构建产物采用本机 ad-hoc 签名，尚未公证，也不是可对外分发的安装包。可用 Xcode 打开 `Package.swift` 开发。
+发布优化构建：`bash scripts/build-app.sh release`。日常构建采用本机 ad-hoc 签名。对外安装包：`bash scripts/package-app.sh`（Developer ID 签名、公证 `.pkg`，并生成 Sparkle 用的 `UIReview-<version>.zip` 与 `appcast.xml`）。发布到 GitHub Releases：
+
+```sh
+bash scripts/package-app.sh
+bash scripts/publish-release.sh
+```
+
+`publish-release.sh` 使用 tag `v<version>`，上传 pkg、zip 和 appcast。加 `--dry-run` 只打印命令；加 `--package` 会先打包再上传。可选把更新说明放在 `docs/releases/UIReview-<version>.md`。已装的非 Sparkle 版本不会自动升上来，需要先安装一次带更新器的包。EdDSA 私钥在本机登录钥匙串账户 `ui-review`，不要提交到 git。可用 Xcode 打开 `Package.swift` 开发。
 
 ## 使用
 
@@ -27,19 +34,20 @@ open 'build/UI Review.app'
 - **删除素材**：⌘Delete 删除当前选中的截图或动画及其问题，⌘Z 可撤销；输入框内保留文字编辑行为，长按不会连续删除多个素材。
 - **标注**：主编辑窗口内 R 切换框选，V 切换选择（无需先点击画布，输入文字或弹窗中不触发）。拖动矩形移动，拖动四角缩放，Delete 删除。右侧编辑评论自动保存。空评论作为待填写的问题保留。
 - **缩放**：适合窗口或 25%–200%，固定倍率下支持双向滚动。
-- **管理**：左侧右键重命名/删除截图或动画。标题栏可编辑 Review 名称。“开始新的 Review”保留旧记录，在下一次导入时自动创建新 Review。
+- **管理**：左侧右键重命名/删除截图或动画。标题栏可编辑 Review 名称。“开始新的 Review”保留旧记录，在下一次导入时自动创建新 Review。应用菜单「检查更新…」可手动检查 GitHub Releases。
 - **历史 Review**：从侧栏或 Review 菜单打开；双击整行切换并关闭历史窗口，单击不会切换。右键可删除 Review；删除当前记录后返回空白工作区，⌘Z 可撤销。空列表可点击“返回工作区”，Esc 关闭历史窗口。
 - **撤销**：⌘Z / ⇧⌘Z，包含导入、删除、矩形、评论和 Review 切换。相邻评论输入合并，最多保留 80 次操作。重启保留内容，不保留撤销历史。
 - **导出**：交接预览可选当前素材或整个 Review，核对问题描述后复制提示词或导出；动画证据包含完整视频、有限关键帧、区域图与参考映射。纯截图导出包含 review.md、review.json、原图和标注图，不覆盖已有目录。
 
 ## MCP
 
-在 App 的“连接 Coding Agent”中，可分别点击 Codex / Claude Code 的“一键安装”。打开面板会自动检测；安装后会核对配置并完成本机 MCP 握手与只读工具检查；V2 提供五个截图工具和四个动画工具。绿色状态表示配置和服务可用，客户端仍需重新连接或开启新会话。
+在 App 的“连接 Coding Agent”中，可分别点击 Codex / Claude Code / Cursor 的“一键安装”。打开面板会自动检测；安装后会核对配置并完成本机 MCP 握手与只读工具检查；V2 提供五个截图工具和四个动画工具。绿色状态表示配置和服务可用，客户端仍需重新连接或开启新会话。
 
-- 需要已安装相应客户端命令行工具；会搜索常见 Homebrew / `.local/bin` 路径，以及 Codex 桌面包内的 CLI。
+- Codex / Claude Code 需要已安装相应客户端命令行工具；Codex 优先使用桌面 App 内置 CLI，避免系统 Node 架构冲突；没有桌面版时回退到 PATH、Homebrew / `.local/bin` 等常见路径。
 - Codex 使用官方 `mcp add`；Claude Code 合并当前用户的 `.claude.json`（支持 `CLAUDE_CONFIG_DIR`），保留其他 JSON 字段及文件权限。
 - 修改前备份已有配置，备份位于原文件旁，扩展名为 `ui-review-backup-UUID`。相同配置重复安装不会重写；识别到标准 UI Review 的旧路径或禁用配置时，按钮改为“一键升级”，更新后重新检测。自定义同名配置不会自动覆盖。当前 App 内的 MCP 若仍是旧版，需先更新 App。
-- Claude 的项目配置可能覆盖用户配置；这里不修改项目配置。安装前请将 App 放在固定位置，移动后需要重新配置路径。
+- Cursor 直接合并用户级 `~/.cursor/mcp.json`，无需安装 Cursor 命令行工具，保留其他 MCP 和 JSON 字段。配置格式见 [Cursor 官方文档](https://prod.cursor.com/help/customization/mcp)。
+- Claude Code / Cursor 的项目配置可能覆盖用户配置；这里不修改项目配置。安装前请将 App 放在固定位置，移动后需要重新配置路径。
 - “手动配置”中仍可复制 TOML / JSON。检测不会启动模型请求，不代表当前 Agent 会话已经调用过工具。
 
 App 菜单 **Review → Agent 集成** 打开同一安装与检测面板；只有点击“一键安装”或“一键升级”才修改对应客户端配置，检测与复制配置不会修改客户端配置。
@@ -52,7 +60,7 @@ Codex 配置示例（替换成实际绝对路径）：
 command = "/absolute/path/UI Review.app/Contents/MacOS/ui-review-mcp"
 ```
 
-Claude Code / 支持 JSON 的 MCP 客户端配置：
+Claude Code / Cursor / 支持 JSON 的 MCP 客户端配置：
 
 ```json
 {

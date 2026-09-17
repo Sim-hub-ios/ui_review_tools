@@ -1,11 +1,17 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @main
 struct UIReviewApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.openWindow) private var openWindow
+    private let updaterController: SPUStandardUpdaterController
     @State private var store = ReviewStore()
+
+    init() {
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    }
 
     var body: some Scene {
         Window("UI Review", id: "review") {
@@ -16,6 +22,9 @@ struct UIReviewApp: App {
         .defaultSize(width: 1280, height: 820)
         .windowResizability(.contentMinSize)
         .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterController.updater)
+            }
             CommandGroup(after: .newItem) {
                 Button("开始新的 Review") { store.newReview() }.keyboardShortcut("n")
                 Button("导入素材…") { store.chooseFiles() }.keyboardShortcut("o")
@@ -95,13 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                NSApp.keyWindow?.attachedSheet == nil,
                NSApp.keyWindow?.identifier?.rawValue == "review",
                !(NSApp.keyWindow?.firstResponder is NSTextView || NSApp.keyWindow?.firstResponder is NSTextField) {
-                if let canvas = NSApp.keyWindow?.firstResponder as? CanvasView {
-                    canvas.paste(nil)
-                } else if let player = NSApp.keyWindow?.firstResponder as? MotionPlayerSurface {
-                    player.paste(nil)
-                } else {
-                    store?.pasteImage()
-                }
+                store?.pasteClipboard()
                 return nil
             }
             return event

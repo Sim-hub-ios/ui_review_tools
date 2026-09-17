@@ -172,16 +172,18 @@ struct IntegrationView: View {
                                 .textSelection(.enabled)
                         }.padding(10).background(Color.primary.opacity(0.04)).clipShape(.rect(cornerRadius: 8))
                     }.disabled(integration.busy != nil)
-                    Text("检测核对配置并连接本机 MCP 服务，不代表客户端当前会话已重新加载。Claude Code 使用用户级配置，项目配置可能覆盖它。")
+                    Text("检测核对配置并连接本机 MCP 服务，不代表客户端当前会话已重新加载。Claude Code 和 Cursor 使用用户级配置，项目配置可能覆盖它。")
                         .font(.caption).foregroundStyle(.secondary)
                     DisclosureGroup("手动配置", isExpanded: $showManual) {
                         VStack(alignment: .leading, spacing: 10) {
+                            Text("Cursor：将 JSON 配置合并到 ~/.cursor/mcp.json。")
+                                .font(.caption).foregroundStyle(.secondary)
                             ScrollView(.horizontal) {
                                 Text(tomlConfiguration).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(10)
                             }.background(Color.primary.opacity(0.04)).clipShape(.rect(cornerRadius: 6))
                             HStack {
                                 Button("复制 Codex 配置") { copy(tomlConfiguration) }
-                                Button("复制 Claude Code / JSON 配置") { copy(jsonConfiguration) }
+                                Button("复制 Claude Code / Cursor 配置") { copy(jsonConfiguration) }
                                 if copied { Text("已复制").font(.caption).foregroundStyle(.green) }
                             }
                         }.padding(.top, 8)
@@ -190,7 +192,7 @@ struct IntegrationView: View {
             }
             GroupBox("2. 交给 Agent") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("完成截图标注后，复制交接提示词，粘贴到 Codex 或 Claude Code 的项目会话中。")
+                    Text("完成截图标注后，复制交接提示词，粘贴到 Codex、Claude Code 或 Cursor 的项目会话中。")
                         .font(.callout).foregroundStyle(.secondary)
                     Button("复制当前 Review 的交接提示词") { store.copyHandoff(); copied = true }.disabled(store.currentReview == nil)
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
