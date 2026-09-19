@@ -73,6 +73,17 @@ public struct Review: Codable, Identifiable, Equatable, Sendable {
     }
 
     public var issueCount: Int { screenshots.reduce(0) { $0 + $1.issues.count } + animations.reduce(0) { $0 + $1.issues.count } }
+    public var referencedVideoAssetIDs: Set<UUID> {
+        Set(animations.flatMap {
+            [$0.currentAssetID] + [$0.activeReference?.referenceAssetID].compactMap { $0 }
+                + $0.issues.compactMap { $0.referenceSnapshot?.referenceAssetID }
+        })
+    }
+    public mutating func pruneUnusedVideoAssets(keeping extra: UUID? = nil) {
+        var ids = referencedVideoAssetIDs
+        if let extra { ids.insert(extra) }
+        videoAssets.removeAll { !ids.contains($0.id) }
+    }
     public mutating func reconcileOrder() {
         let items = screenshots.map { ReviewItem(kind: .screenshot, id: $0.id) } + animations.map { ReviewItem(kind: .animation, id: $0.id) }
         itemOrder = itemOrder.filter { items.contains($0) }

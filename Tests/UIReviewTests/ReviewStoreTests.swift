@@ -107,6 +107,28 @@ final class ReviewStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testDeleteThenImportDoesNotKeepDeletedScreenshotInCurrentReview() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("UIReview-replace-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = ReviewRepository(root: root)
+        let store = ReviewStore(repository: repo)
+        let ctx = CGContext(data: nil, width: 200, height: 400, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        try store.importImage(ImageFiles.png(ctx.makeImage()!), name: "first.png")
+        let firstID = try XCTUnwrap(store.screenshot?.id)
+        store.deleteScreenshot(firstID)
+        try store.importImage(ImageFiles.png(ctx.makeImage()!), name: "second.png")
+        let secondID = try XCTUnwrap(store.screenshot?.id)
+        XCTAssertNotEqual(secondID, firstID)
+        XCTAssertEqual(store.currentReview?.screenshots.map(\.id), [secondID])
+        XCTAssertFalse(try repo.load().currentReview?.screenshots.contains { $0.id == firstID } == true)
+        let prompt = HandoffPrompt.projected(
+            try XCTUnwrap(store.currentReview), itemID: secondID, scope: .wholeReview)
+        XCTAssertEqual(prompt.screenshots.map(\.id), [secondID])
+        XCTAssertFalse(prompt.screenshots.contains { $0.id == firstID })
+    }
+
+    @MainActor
     func testCorruptionDisablesWritesAndPreservesFile() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("UIReview-store-bad-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

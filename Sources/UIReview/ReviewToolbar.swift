@@ -43,15 +43,17 @@ struct ReviewToolbar: View {
             Button("导入素材") { store.chooseFiles() }.fixedSize()
                 .help("导入素材 · ⌘O").disabled(store.isBusy || store.loadFailed)
             Button("导出 Review") { store.exportReview() }.fixedSize()
-                .help("导出 Review · ⇧⌘E").disabled(store.currentReview == nil)
-            Button { store.copyHandoff() } label: {
-                Text("复制交接提示词").font(.system(size: 12))
+                .help("导出 Review · ⇧⌘E").disabled(!store.canHandoff)
+            Button("复制整个 Review") { store.copyHandoff(.wholeReview) }.fixedSize()
+                .help("复制整个 Review").disabled(!store.canHandoff)
+            Button { store.copyHandoff(.currentItem) } label: {
+                Text("复制当前素材").font(.system(size: 12))
                     .foregroundStyle(colorScheme == .dark ? Color(red: 34/255, green: 37/255, blue: 43/255) : .white)
                     .frame(width: 142, height: 32)
-                    .background(accent.opacity(store.currentReview == nil ? 0.45 : 1), in: RoundedRectangle(cornerRadius: 8))
+                    .background(accent.opacity(store.canHandoff ? 1 : 0.45), in: RoundedRectangle(cornerRadius: 8))
             }
-            .disabled(store.currentReview == nil)
-            .help("复制交接提示词，粘贴到已配置 MCP 的 Coding Agent")
+            .disabled(!store.canHandoff)
+            .help("复制当前素材 · ⇧⌘C")
         }
         .font(.system(size: 13)).buttonStyle(.plain).foregroundStyle(foreground)
         .padding(.horizontal, 20).frame(height: 64)

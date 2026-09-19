@@ -155,9 +155,14 @@ extension ReviewStore {
   }
   func deleteAnimation(_ id: UUID) {
     let rID = library.currentReviewID
+    let deletingSelected = selectedAnimationID == id
+    let keepPending = deletingSelected ? nil : pendingReferenceID
     commit("删除动画") { lib in
       guard let r = lib.reviews.firstIndex(where: { $0.id == rID }) else { return }
       lib.reviews[r].animations.removeAll { $0.id == id }
+      lib.reviews[r].pruneUnusedVideoAssets(keeping: keepPending)
+      lib.reviews[r].updatedAt = Date()
     }
+    if deletingSelected { pendingReferenceID = nil }
   }
 }

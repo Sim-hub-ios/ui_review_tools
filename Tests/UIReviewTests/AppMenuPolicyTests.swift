@@ -26,6 +26,8 @@ final class AppMenuPolicyTests: XCTestCase {
         XCTAssertFalse(AppMenuPolicy.isBlocked(item("删除问题")))
         XCTAssertFalse(AppMenuPolicy.isBlocked(item("重命名…")))
         XCTAssertFalse(AppMenuPolicy.isBlocked(item("删除截图及问题")))
+        XCTAssertFalse(AppMenuPolicy.isBlocked(item("复制当前素材")))
+        XCTAssertFalse(AppMenuPolicy.isBlocked(item("复制整个 Review")))
     }
 
     func testBlocksWindowCloseInFileMenu() {

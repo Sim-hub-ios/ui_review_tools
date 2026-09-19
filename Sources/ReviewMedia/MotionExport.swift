@@ -8,12 +8,7 @@ public enum MotionExport {
     selected.screenshots.removeAll { $0.id != itemID }
     selected.animations.removeAll { $0.id != itemID }
     selected.reconcileOrder()
-    let ids = Set(
-      selected.animations.flatMap {
-        [$0.currentAssetID] + [$0.activeReference?.referenceAssetID].compactMap { $0 }
-          + $0.issues.compactMap { $0.referenceSnapshot?.referenceAssetID }
-      })
-    selected.videoAssets.removeAll { !ids.contains($0.id) }
+    selected.pruneUnusedVideoAssets()
     return selected
   }
   public static func write(
@@ -32,12 +27,7 @@ public enum MotionExport {
     try fm.createDirectory(at: stage, withIntermediateDirectories: true)
     defer { try? fm.removeItem(at: stage) }
     var selected = review
-    let ids = Set(
-      review.animations.flatMap {
-        [$0.currentAssetID] + [$0.activeReference?.referenceAssetID].compactMap { $0 }
-          + $0.issues.compactMap { $0.referenceSnapshot?.referenceAssetID }
-      })
-    selected.videoAssets.removeAll { !ids.contains($0.id) }
+    selected.pruneUnusedVideoAssets()
     for asset in selected.videoAssets {
       try Task.checkCancellation()
       let source = try EvidenceService.verify(asset, repository: repository)

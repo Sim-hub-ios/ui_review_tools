@@ -37,7 +37,7 @@ bash scripts/publish-release.sh
 - **管理**：左侧右键重命名/删除截图或动画。标题栏可编辑 Review 名称。“开始新的 Review”保留旧记录，在下一次导入时自动创建新 Review。应用菜单「检查更新…」可手动检查 GitHub Releases。
 - **历史 Review**：从侧栏或 Review 菜单打开；双击整行切换并关闭历史窗口，单击不会切换。右键可删除 Review；删除当前记录后返回空白工作区，⌘Z 可撤销。空列表可点击“返回工作区”，Esc 关闭历史窗口。
 - **撤销**：⌘Z / ⇧⌘Z，包含导入、删除、矩形、评论和 Review 切换。相邻评论输入合并，最多保留 80 次操作。重启保留内容，不保留撤销历史。
-- **导出**：交接预览可选当前素材或整个 Review，核对问题描述后复制提示词或导出；动画证据包含完整视频、有限关键帧、区域图与参考映射。纯截图导出包含 review.md、review.json、原图和标注图，不覆盖已有目录。
+- **导出 / 复制**：工具栏始终提供导出 Review、复制整个 Review、复制当前素材。复制直接写入剪贴板；导出永远是当前这条 Review 的全部截图和视频，不含历史。含视频时先确认完整录屏体积。动画证据包含完整视频、有限关键帧、区域图与参考映射。纯截图导出包含 review.md、review.json、原图和标注图，不覆盖已有目录。
 
 ## MCP
 
@@ -88,7 +88,7 @@ Claude Code / Cursor / 支持 JSON 的 MCP 客户端配置：
 | get_animation_frames | review_id、animation_id、issue_id，可选 expected_revision、count、max_dimension | 时间段问题的有限证据帧（2–8 帧） |
 
 省略 review_id 时使用当前 Review。所有 ID 均为 UUID；坐标原点在图片左上角。截图 MCP 单张返回图片上限 25MB，超出时使用文件导出。动画工具另有图像与响应预算；交接时传入保存的 expected_revision，版本变化或素材缺失时先报告，不猜测参数。
-App 提供“复制交接提示词”，用户在自己的 Coding Agent 项目会话中粘贴执行。UI Review 不分析或修改项目代码。
+App 提供“复制当前素材”和“复制整个 Review”，用户在自己的 Coding Agent 项目会话中粘贴执行。UI Review 不分析或修改项目代码。
 
 ## 本地数据
 
@@ -121,6 +121,6 @@ bash scripts/test.sh
 
 开发设计见 [V2 技术方案](docs/UI_Review_V2_Technical_Design.md)，包含数据迁移、视频帧与框选、MCP 契约、资源预算和开发拆分；附 [动画问题 JSON 示例](docs/examples/motion-issue-v2.json)。
 
-视觉交付见 [V2 视觉设计稿](docs/UI_Review_V2_Visual_Design.md)，包含七张流程/空状态页面、主要异常状态和视觉规范，以及逐页 Figma 链接。
+视觉交付见 [V2 视觉设计稿](docs/UI_Review_V2_Visual_Design.md)，包含动画主流程页面、首次 MCP 向导弹窗，以及逐页 Figma 链接。
 
 V2 本机开发版与验证边界见 [开发交付记录](docs/UI_Review_V2_Implementation.md)。使用 `scripts/open-v2-preview.command` 可在独立测试数据目录启动预览。

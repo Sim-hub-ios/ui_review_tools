@@ -249,11 +249,11 @@ AgentIntegration 改为验证原五项是工具集合子集，所有公开工具
 
 ## 9. 交接与导出实现
 
-建立不可变 ExportPlan：reviewID、scope（review 或 item）、libraryRevision、问题 ID、使用的参考快照和去重资产列表。生成预览和复制提示词前 flush；预览之后编辑造成 revision 改变时重新生成或要求刷新。
+复制提示词由纯函数生成，工具栏提供两个范围：当前素材（`MotionExport.selected`）与整个 Review。复制与导出前 flush；不再弹出交接预览，也不再按预览切换导出范围。导出永远是整份当前 Review。
 
 复制提示词写明范围与稳定 ID，并要求先读对应元数据再获取原图/标注图；动画可使用 expected_revision 校验。过期提示词仍指向同一对象，若要求的 revision 不再可用则报告变化并重新读取，不能悄悄修复另一个当前 Review。
 
-导出包使用 `formatVersion: 2`，避免混淆持久化 schemaVersion。纯截图旧导出结构由适配器保持；新范围导出包含 manifest 元信息、selectedReview 投影、视频元数据及 evidence 清单。全部路径为包内相对路径。
+导出包使用 `formatVersion: 2`，避免混淆持久化 schemaVersion。纯截图旧导出结构由 ReviewExport 保持；含视频时确认完整录屏体积后走 MotionExport.write。全部路径为包内相对路径。
 
 步骤：同卷暂存目录 → 复制原图/完整视频/实际引用旧参考 → 生成原帧与标注帧/序列 → 写 JSON/Markdown → 校验所有引用和字节/hash → 原子移动为最终目录。文件夹只在完整成功时发布，不覆盖已有文件。
 
@@ -293,7 +293,7 @@ AgentIntegration 改为验证原五项是工具集合子集，所有公开工具
 | T2 | Store 保存队列、selection、working/saved revision | 保存/撤销状态可验证，未实现视频前截图行为仍通过 |
 | T3 | Importer、FrameIndex/Decoder、单视频 UI/框选 | 真拖绘与时间绑定通过 PRD A02–A09 |
 | T4 | 参考/对齐/session generation | PRD A10–A13，旧参考快照可追溯 |
-| T5 | MCP handlers、probe、ExportPlan/导出 | PRD A14–A17，完整 Agent 获取证据闭环 |
+| T5 | MCP handlers、probe、复制提示词/导出 | PRD A14–A17，完整 Agent 获取证据闭环 |
 
 不在技术文档阶段改生产模型或迁移真实数据。T0 通过后才能宣称 D0 的运行时验证完成；本方案先冻结行为与接口选择，资源设计值依据测试结果修订并保留记录。
 

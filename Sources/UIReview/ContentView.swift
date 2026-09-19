@@ -31,7 +31,11 @@ struct ContentView: View {
                 Text(store.status).lineLimit(1)
                 Spacer()
                 if store.hasUnsavedChanges { Button("重试保存") { store.retrySave() } }
-                if store.isBusy { ProgressView().controlSize(.small); if store.importTask != nil { Button("取消") { store.importTask?.cancel() } } }
+                if store.isBusy {
+                    ProgressView().controlSize(.small)
+                    if store.importTask != nil { Button("取消") { store.importTask?.cancel() } }
+                    if store.exportTask != nil { Button("取消") { store.cancelExport() } }
+                }
                 Button("MCP · 只读访问") { store.showIntegration = true }.buttonStyle(.plain)
                 Text("\(store.currentReview?.issueCount ?? 0) 个问题").monospacedDigit()
             }
@@ -45,7 +49,6 @@ struct ContentView: View {
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("好") { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
-        .sheet(isPresented: $store.showHandoff) { HandoffView(store: store) }
         .sheet(isPresented: $store.showHistory) { HistoryView(store: store) }
         .sheet(isPresented: $store.showIntegration) { IntegrationView(store: store) }
         .sheet(isPresented: $store.showSimulator) { SimulatorPicker(store: store) }

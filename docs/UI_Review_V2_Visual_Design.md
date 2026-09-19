@@ -18,6 +18,25 @@
 | [08 状态与异常](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=52-157) | 导入中/失败、帧未就绪、待填写、保存失败、标注越界、参考变化、证据缺失 | §5、7–11、13 |
 | [09 视觉规范与交互边界](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=52-208) | 色彩、字号、间距、三栏尺寸、框选规则、升级提示 | §5、8–11 |
 
+## 首次向导（Agent MCP）
+
+日期：2026-09-17。依据 [PRD V2.0 §17](UI_Review_PRD_V2.0.md#17-首次向导安装-agent-mcp)，在原文件新增页面「首次向导 · 交互原型」与「首次向导 · 视觉设计稿」，保留原 V2 动画页面。
+
+[打开向导视觉稿](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=86-124)。[打开可点击原型](https://www.figma.com/proto/HXkzr0N4y3qGg4rryDdTaC?node-id=85-36&starting-point-node-id=85%3A36)。
+
+| 页面 | 内容 | PRD 对应 |
+| --- | --- | --- |
+| [01 说明](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=86-124) | 空工作区上的说明弹窗，主按钮开始配置 | §17 |
+| [02 安装 · 未安装](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=86-179) | Codex / Claude Code / Cursor 一键安装 | §17 |
+| [03 安装 · 部分成功](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=86-267) | 已安装、安装中、仍可安装 | §17 |
+| [04 结果 · 全部成功](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=86-351) | 三客户端可用，提示重新连接 | §17 |
+| [05 结果 · 部分成功](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=86-409) | 已安装与未安装并列 | §17 |
+| [06 结果 · 未安装](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=86-467) | 都未安装，可返回或跳过 | §17 |
+| [07 安装 · 升级与失败](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=86-524) | 一键升级、同名冲突失败文案 | §17 |
+| [08 视觉规范与交互边界](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=86-614) | 弹窗尺寸、色彩、入口分工 | §17 |
+
+向导弹窗宽 640，盖在 1280 × 820 空工作区上。主色、工具栏灰和 Noto Sans SC 与现有浅色稿一致。完整点击流程在「首次向导 · 交互原型」页面，起点为 [01 说明](https://www.figma.com/design/HXkzr0N4y3qGg4rryDdTaC?node-id=85-36)。
+
 ## 视觉与交互约定
 
 - 基准窗口 1280 × 820；侧栏/画布/问题面板为 232/728/320；顶栏 64，状态栏 36。
@@ -25,11 +44,11 @@
 - 稿件字体为 Noto Sans SC。原生实现使用系统字体，需要重新校对文字宽度、换行及辅助功能字号。
 - 框选保留问题编号与四角手柄。右侧明确区分移除区域和删除问题，保留无区域反馈流程。
 - 时间范围显示起点、终点和时长；双视频同时保留原始时间和相对读数。
-- 交接默认当前素材全部问题，可选整个 Review；复制由用户粘贴发送，导出显示完整录屏与实际大小。
+- 工具栏固定三个交接按钮：导出 Review、复制整个 Review、复制当前素材（蓝色主按钮）。复制直接写剪贴板；导出永远整份当前 Review，含视频时先提示完整录屏体积。
 
 ## 已检查与边界
 
-已查看主编辑、双视频、参考对齐、交接、状态板的 Figma 渲染；修正对齐画面裁切与双视频时间标签的位置。
+已查看主编辑、双视频、参考对齐、交接、状态板的 Figma 渲染；修正对齐画面裁切与双视频时间标签的位置。2026-09-17 已查看首次向导说明、安装、结果及升级/失败态渲染。
 
 这是可编辑静态视觉稿，不代表视频播放、矩形拖绘、范围编辑、复制、导出或 MCP 已实现。原交互原型仍在原页面，视觉稿未重新连接完整点击流程。
 

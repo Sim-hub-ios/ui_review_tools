@@ -32,7 +32,7 @@ struct UIReviewApp: App {
                 Button("开始新的 Review") { store.newReview() }.keyboardShortcut("n")
                 Button("导入素材…") { store.chooseFiles() }.keyboardShortcut("o")
                 Button("导出 Review…") { store.exportReview() }.keyboardShortcut("e", modifiers: [.command, .shift])
-                    .disabled(store.currentReview == nil)
+                    .disabled(!store.canHandoff)
             }
             CommandGroup(replacing: .saveItem) {}
             CommandGroup(replacing: .undoRedo) {
@@ -48,7 +48,9 @@ struct UIReviewApp: App {
                 Divider()
                 Button("历史 Review…") { store.showHistory = true }
                 Button("Agent 集成…") { store.showIntegration = true }
-                Button("复制交接提示词") { store.copyHandoff() }.disabled(store.currentReview == nil)
+                Button("复制当前素材") { store.copyHandoff(.currentItem) }
+                    .keyboardShortcut("c", modifiers: [.command, .shift]).disabled(!store.canHandoff)
+                Button("复制整个 Review") { store.copyHandoff(.wholeReview) }.disabled(!store.canHandoff)
             }
         }
         Settings { IntegrationView(store: store, isSettings: true) }

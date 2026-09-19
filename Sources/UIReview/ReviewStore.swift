@@ -56,7 +56,6 @@ final class ReviewStore {
     var errorMessage: String?
     var status = "所有内容保存在本机"
     var isBusy = false
-    var showHandoff = false
     var showHistory = false
     var showIntegration = false
     var showSimulator = false
@@ -69,6 +68,7 @@ final class ReviewStore {
     // Cache fills during View.body evaluation must not invalidate the observation graph.
     @ObservationIgnored var motionKeyAction: ((UInt16) -> Void)?
     @ObservationIgnored var importTask: Task<Void, Never>?
+    @ObservationIgnored var exportTask: Task<Void, Never>?
     @ObservationIgnored private var images: [UUID: NSImage] = [:]
 
     struct Snapshot {
@@ -96,6 +96,7 @@ final class ReviewStore {
     var issue: Issue? { screenshot?.issues.first { $0.id == selectedIssueID } }
     var canUndo: Bool { !undoStack.isEmpty && !loadFailed }
     var canRedo: Bool { !redoStack.isEmpty && !loadFailed }
+    var canHandoff: Bool { HandoffPrompt.isEnabled(currentReview) }
 
     func image(for shot: Screenshot) -> NSImage? {
         if let image = images[shot.id] { return image }
@@ -355,24 +356,54 @@ final class ReviewStore {
     }
 
     func exportReview() {
-        if currentReview?.animations.isEmpty == false { showHandoff = true; return }
-        guard let review = currentReview, !review.screenshots.isEmpty, retrySave() else { return }
+        guard let review = currentReview, canHandoff, exportTask == nil, retrySave() else { return }
+        if HandoffPrompt.needsVideoExportConfirmation(review) {
+            let alert = NSAlert()
+            alert.messageText = HandoffPrompt.exportWarning(
+                byteLength: review.videoAssets.filter { review.referencedVideoAssetIDs.contains($0.id) }
+                    .reduce(0) { $0 + $1.byteLength })
+            alert.addButton(withTitle: "导出")
+            alert.addButton(withTitle: "取消")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.prompt = "导出到此处"; panel.message = "将在所选位置创建新的 Review 文件夹。"
         guard panel.runModal() == .OK, let parent = panel.url else { return }
-        let destination = parent.appendingPathComponent("review-\(Int(Date().timeIntervalSince1970))-\(review.id.uuidString.prefix(6))")
-        do {
-            try ReviewExport.write(review, repository: repository, to: destination)
-            status = "已导出 \(review.screenshots.count) 张截图与 \(review.issueCount) 个问题"
-            NSWorkspace.shared.activateFileViewerSelecting([destination])
-        } catch { errorMessage = error.localizedDescription }
+        if review.animations.isEmpty {
+            let destination = parent.appendingPathComponent("review-\(Int(Date().timeIntervalSince1970))-\(review.id.uuidString.prefix(6))")
+            do {
+                try ReviewExport.write(review, repository: repository, to: destination)
+                status = "已导出 \(review.screenshots.count) 张截图与 \(review.issueCount) 个问题"
+                NSWorkspace.shared.activateFileViewerSelecting([destination])
+            } catch { errorMessage = error.localizedDescription }
+            return
+        }
+        let destination = parent.appendingPathComponent("review-\(UUID().uuidString.prefix(8))")
+        let revision = library.revision
+        status = "正在导出 · 取消"
+        isBusy = true
+        exportTask = Task {
+            defer { isBusy = false; exportTask = nil }
+            do {
+                try await MotionExport.write(review, revision: revision, repository: repository, to: destination)
+                status = "导出完成"
+                NSWorkspace.shared.activateFileViewerSelecting([destination])
+            } catch is CancellationError { status = "已取消导出" } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 
-    func copyHandoff() {
-        if currentReview?.animations.isEmpty == false { showHandoff = true; return }
-        guard let review = currentReview, retrySave() else { return }
-        let text = "请通过 ui-review MCP 的 get_review 读取 Review \(review.id.uuidString)（\(review.title)），然后用 get_screenshot 获取相关原图及标注图。逐项理解用户评论和区域坐标，结合当前项目处理 UI 问题。若要求不清楚，请先说明疑问。"
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
-        status = "已复制交接提示词；请在 Coding Agent 中粘贴"
+    func cancelExport() { exportTask?.cancel() }
+
+    func copyHandoff(_ scope: HandoffScope, to board: NSPasteboard = .general) {
+        guard let review = currentReview, canHandoff, retrySave() else { return }
+        let projected = HandoffPrompt.projected(
+            review, itemID: selectedAnimationID ?? selectedScreenshotID, scope: scope)
+        board.clearContents()
+        board.setString(
+            HandoffPrompt.text(review: projected, revision: library.revision, scope: scope),
+            forType: .string)
+        status = HandoffPrompt.copyStatus(for: scope)
     }
 }

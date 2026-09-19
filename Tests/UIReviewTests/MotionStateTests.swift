@@ -50,6 +50,39 @@ final class MotionStateTests: XCTestCase {
     store.openReview(review.id)
     XCTAssertEqual(store.animation?.id, animation.id)
   }
+  @MainActor func testDeleteAnimationDropsItsVideoSoReplacementIsNotTheOldAsset() throws {
+    let setup = try motionStore(assetCount: 1)
+    let oldAssetID = try XCTUnwrap(setup.store.currentReview?.videoAssets.first?.id)
+    let oldAnimationID = try XCTUnwrap(setup.store.animation?.id)
+    setup.store.deleteAnimation(oldAnimationID)
+    XCTAssertEqual(setup.store.currentReview?.animations, [])
+    XCTAssertEqual(setup.store.currentReview?.videoAssets, [])
+    XCTAssertFalse(try setup.repo.load().currentReview?.videoAssets.contains { $0.id == oldAssetID } == true)
+
+    let newAsset = videoAsset(UUID())
+    let replacement = ReviewCore.Animation(name: "second", currentAssetID: newAsset.id)
+    setup.store.commit("替换动画") { lib in
+      guard let r = lib.reviews.firstIndex(where: { $0.id == setup.reviewID }) else { return }
+      lib.reviews[r].videoAssets.append(newAsset)
+      lib.reviews[r].animations.append(replacement)
+    }
+    let review = try XCTUnwrap(setup.store.currentReview)
+    XCTAssertEqual(review.animations.map(\.id), [replacement.id])
+    XCTAssertEqual(review.videoAssets.map(\.id), [newAsset.id])
+    XCTAssertFalse(review.videoAssets.contains { $0.id == oldAssetID })
+    XCTAssertEqual(
+      HandoffPrompt.projected(review, itemID: nil, scope: .wholeReview).videoAssets.map(\.id),
+      [newAsset.id])
+  }
+  @MainActor func testDeleteAnimationKeepsVideoStillUsedByAnotherAnimation() throws {
+    let setup = try motionStore(assetCount: 2)
+    let first = setup.store.currentReview!.animations[0]
+    let second = setup.store.currentReview!.animations[1]
+    setup.store.deleteAnimation(first.id)
+    let review = try XCTUnwrap(setup.store.currentReview)
+    XCTAssertEqual(review.animations.map(\.id), [second.id])
+    XCTAssertEqual(review.videoAssets.map(\.id), [setup.assets[1].id])
+  }
   @MainActor func testLoopRejectsRangeWithoutFramesInsteadOfSeekingForever() {
     let session = MotionSession()
     session.frames = [MediaTime(seconds: 0), MediaTime(seconds: 0.033), MediaTime(seconds: 0.066)]
@@ -116,5 +149,36 @@ extension MotionStateTests {
     XCTAssertGreaterThan(session.time.seconds, imported.frames[15].seconds)
     session.toggle()
     XCTAssertFalse(session.playing)
+  }
+}
+
+private extension MotionStateTests {
+  struct MotionSetup {
+    var store: ReviewStore
+    var repo: ReviewRepository
+    var reviewID: UUID
+    var assets: [VideoAsset]
+  }
+
+  func videoAsset(_ id: UUID) -> VideoAsset {
+    VideoAsset(
+      id: id, originalName: "\(id).mov", path: "assets/videos/\(id).mov",
+      sha256: String(repeating: "a", count: 64), byteLength: 100, container: "mov", codec: "h264",
+      trackID: 1, timelineOrigin: .zero, duration: MediaTime(seconds: 1), encodedWidth: 100,
+      encodedHeight: 200, displayWidth: 100, displayHeight: 200,
+      preferredTransform: VideoTransform(a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0), nominalFrameRate: 30)
+  }
+
+  @MainActor func motionStore(assetCount: Int) throws -> MotionSetup {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    let repo = ReviewRepository(root: root)
+    let assets = (0..<assetCount).map { _ in videoAsset(UUID()) }
+    var review = Review(title: "动画")
+    review.animations = assets.enumerated().map { ReviewCore.Animation(name: "clip-\($0.offset)", currentAssetID: $0.element.id) }
+    review.videoAssets = assets
+    review.reconcileOrder()
+    try repo.save(ReviewLibrary(currentReviewID: review.id, reviews: [review]))
+    return MotionSetup(store: ReviewStore(repository: repo), repo: repo, reviewID: review.id, assets: assets)
   }
 }

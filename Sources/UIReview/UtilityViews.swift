@@ -192,9 +192,14 @@ struct IntegrationView: View {
             }
             GroupBox("2. 交给 Agent") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("完成截图标注后，复制交接提示词，粘贴到 Codex、Claude Code 或 Cursor 的项目会话中。")
+                    Text("完成截图或录屏标注后，复制交接提示词，粘贴到 Codex、Claude Code 或 Cursor 的项目会话中。")
                         .font(.callout).foregroundStyle(.secondary)
-                    Button("复制当前 Review 的交接提示词") { store.copyHandoff(); copied = true }.disabled(store.currentReview == nil)
+                    HStack {
+                        Button("复制当前素材") { store.copyHandoff(.currentItem); copied = true }
+                            .help("复制当前素材 · ⇧⌘C").disabled(!store.canHandoff)
+                        Button("复制整个 Review") { store.copyHandoff(.wholeReview); copied = true }
+                            .help("复制整个 Review").disabled(!store.canHandoff)
+                    }
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack {
@@ -202,7 +207,7 @@ struct IntegrationView: View {
                 Spacer()
                 Button("打开本地数据目录") { NSWorkspace.shared.open(store.repository.root) }
             }.font(.caption).foregroundStyle(.secondary)
-            Text("仅在点击安装时修改对应客户端配置，不上传截图。删除的截图文件暂时保留，以支持撤销；导出只包含当前 Review 中的截图。")
+            Text("仅在点击安装时修改对应客户端配置，不上传截图。删除的截图文件暂时保留，以支持撤销；导出包含当前这条 Review 的全部截图和视频。")
                 .font(.caption2).foregroundStyle(.secondary)
         }.padding(24).frame(width: 680)
         .task {
