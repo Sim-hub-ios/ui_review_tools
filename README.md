@@ -4,7 +4,7 @@
 
 截图或录屏 → 框选与时间标记 → 评论 → 通过只读 MCP 或文件导出交给 Coding Agent。
 
-当前开发版 **2.0.4**（build 7）：接入 Sparkle 自动更新。Sparkle 比较的是 `CFBundleVersion`，不是 2.0.3 / 2.0.4 营销版本号。
+当前开发版 **2.0.5**（build 8）：统一交接三按钮；删除动画后不再保留旧视频。Sparkle 比较的是 `CFBundleVersion`，不是营销版本号。
 
 ## 构建与运行
 
