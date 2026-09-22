@@ -4,7 +4,7 @@
 
 截图或录屏 → 框选与时间标记 → 评论 → 通过只读 MCP 或文件导出交给 Coding Agent。
 
-当前开发版 **2.0.5**（build 8）：统一交接三按钮；删除动画后不再保留旧视频。Sparkle 比较的是 `CFBundleVersion`，不是营销版本号。
+当前开发版 **2.0.6**（build 9）：在主界面进度条上对齐参考视频；交接提示词要求 Agent 直接改代码。Sparkle 比较的是 `CFBundleVersion`，不是营销版本号。
 
 ## 构建与运行
 
