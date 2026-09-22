@@ -75,7 +75,7 @@ public struct Review: Codable, Identifiable, Equatable, Sendable {
     public var issueCount: Int { screenshots.reduce(0) { $0 + $1.issues.count } + animations.reduce(0) { $0 + $1.issues.count } }
     public var referencedVideoAssetIDs: Set<UUID> {
         Set(animations.flatMap {
-            [$0.currentAssetID] + [$0.activeReference?.referenceAssetID].compactMap { $0 }
+            [$0.currentAssetID] + [$0.resolvedReferenceAssetID].compactMap { $0 }
                 + $0.issues.compactMap { $0.referenceSnapshot?.referenceAssetID }
         })
     }

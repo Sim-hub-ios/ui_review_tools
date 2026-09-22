@@ -18,6 +18,20 @@ final class ClipboardPasteTests: XCTestCase {
             .materials)
     }
 
+    func testMaterialListFocusImportsVideoAsNewMaterial() {
+        let video = URL(fileURLWithPath: "/tmp/clip.mp4")
+        XCTAssertEqual(
+            ClipboardPaste.action(
+                fileURLs: [video], hasImageData: false, hasSelectedAnimation: true,
+                materialListFocused: true),
+            .materials)
+        XCTAssertEqual(
+            ClipboardPaste.action(
+                fileURLs: [video], hasImageData: false, hasSelectedAnimation: true,
+                materialListFocused: false),
+            .referenceVideo)
+    }
+
     func testVideoFileUsesReferenceOnlyWhenAnimationIsSelected() {
         let video = URL(fileURLWithPath: "/tmp/clip.mp4")
         let other = URL(fileURLWithPath: "/tmp/clip.MOV")

@@ -23,15 +23,31 @@ import ReviewMedia
   var message: String?
   var referenceStatus: String?
   var referenceTime: MediaTime?
+  var referencePlaying = false
   var alignment: ReferenceAlignment?
   @ObservationIgnored private var token: Any?
+  @ObservationIgnored private var referenceToken: Any?
+  @ObservationIgnored private var referenceSeekTask: Task<Void, Never>?
+  @ObservationIgnored private var referenceSeekID = UUID()
   @ObservationIgnored private var seekTask: Task<Void, Never>?
   @ObservationIgnored private var generation = UUID()
   @ObservationIgnored private var seekGeneration = UUID()
   @ObservationIgnored private var resumeAfterSeek = false
+  @ObservationIgnored private var resumeReferenceAfterSeek = false
   @ObservationIgnored private var repository: ReviewRepository?
 
   func configure(_ animation: Animation, review: Review, repository: ReviewRepository) async {
+    await configure(
+      animation, review: review, repository: repository,
+      referenceAssetID: animation.resolvedReferenceAssetID, alignment: animation.activeReference,
+      resume: nil)
+  }
+
+  func configure(
+    _ animation: Animation, review: Review, repository: ReviewRepository,
+    referenceAssetID: UUID?, alignment requestedAlignment: ReferenceAlignment?, resume: MediaTime?
+  ) async {
+    let resumeTime = resume
     stop()
     let current = UUID()
     generation = current
@@ -45,8 +61,9 @@ import ReviewMedia
     frames = []
     message = nil
     loading = true
-    alignment = animation.activeReference
-    reference = review.videoAssets.first { $0.id == animation.activeReference?.referenceAssetID }
+    reference = review.videoAssets.first { $0.id == referenceAssetID }
+    alignment =
+      requestedAlignment?.referenceAssetID == reference?.id ? requestedAlignment : nil
     do {
       let url = try repository.assetURL(for: asset)
       let index = try await VideoService.index(url, asset: asset)
@@ -64,13 +81,19 @@ import ReviewMedia
         referencePlayer.replaceCurrentItem(with: AVPlayerItem(url: refURL))
         referencePlayer.isMuted = true
         try await waitUntilReady(referencePlayer, generation: current)
+        referenceToken = referencePlayer.addPeriodicTimeObserver(
+          forInterval: CMTime(value: 1, timescale: 30), queue: .main
+        ) { [weak self] raw in
+          Task { @MainActor in guard self?.generation == current else { return }; self?.tickReference(raw) }
+        }
       }
       token = player.addPeriodicTimeObserver(
         forInterval: CMTime(value: 1, timescale: 30), queue: .main
       ) { [weak self] raw in
         Task { @MainActor in guard self?.generation == current else { return }; self?.tick(raw) }
       }
-      seek(index.first ?? .zero)
+      seek(resumeTime.map { nearest($0.seconds) } ?? index.first ?? .zero)
+      if alignment == nil, let first = referenceFrames.first { seekReference(first) }
     } catch {
       if generation == current {
         message = error.localizedDescription
@@ -93,22 +116,33 @@ import ReviewMedia
     generation = UUID()
     seekGeneration = UUID()
     resumeAfterSeek = false
+    resumeReferenceAfterSeek = false
     seekTask?.cancel()
     seekTask = nil
     referenceFrames = []
     referenceImage = nil
     referenceTime = nil
     referenceStatus = nil
+    referencePlaying = false
     useRange = false
     player.pause()
     referencePlayer.pause()
     playing = false
+    referenceSeekTask?.cancel()
     if let token {
       player.removeTimeObserver(token)
       self.token = nil
     }
+    if let referenceToken {
+      referencePlayer.removeTimeObserver(referenceToken)
+      self.referenceToken = nil
+    }
     player.replaceCurrentItem(with: nil)
     referencePlayer.replaceCurrentItem(with: nil)
+  }
+  func nearestReference(_ seconds: Double) -> MediaTime {
+    guard seconds.isFinite else { return referenceTime ?? .zero }
+    return referenceFrames.min { abs($0.seconds - seconds) < abs($1.seconds - seconds) } ?? .zero
   }
   func nearest(_ seconds: Double) -> MediaTime {
     guard seconds.isFinite else { return time }
@@ -118,8 +152,11 @@ import ReviewMedia
     resumeAfterSeek = resume
     guard let asset, let repository, !frames.isEmpty else { return }
     player.pause()
-    referencePlayer.pause()
     playing = false
+    if alignment != nil {
+      referencePlayer.pause()
+      referencePlaying = false
+    }
     loading = true
     image = nil
     seekTask?.cancel()
@@ -196,15 +233,17 @@ import ReviewMedia
     guard !loading, !frames.isEmpty else { return }
     if useRange {
       guard rangeStart.isFinite, rangeEnd.isFinite, rangeStart < rangeEnd,
-        let first = frames.first(where: { $0.seconds >= rangeStart && $0.seconds < rangeEnd })
+        frames.contains(where: { $0.seconds >= rangeStart && $0.seconds < rangeEnd })
       else {
         message = "选段中没有可播放画面。"
         return
       }
-      if time.seconds < rangeStart || time.seconds >= rangeEnd {
-        seek(first, resume: true)
-        return
-      }
+    }
+    if let restart = Self.restartTime(
+      time: time, frames: frames, useRange: useRange, rangeStart: rangeStart, rangeEnd: rangeEnd)
+    {
+      seek(restart, resume: true)
+      return
     }
     guard player.status == .readyToPlay,
       reference == nil || referenceStatus != nil || referencePlayer.status == .readyToPlay
@@ -216,8 +255,120 @@ import ReviewMedia
       CMClockGetTime(CMClockGetHostTimeClock()), CMTime(seconds: 0.1, preferredTimescale: 1_000_000)
     )
     player.setRate(speed, time: player.currentTime(), atHostTime: host)
-    if reference != nil && referenceStatus == nil {
+    if alignment != nil, reference != nil, referenceStatus == nil {
       referencePlayer.setRate(speed, time: referencePlayer.currentTime(), atHostTime: host)
+    }
+  }
+  func transportToggle(_ side: AlignmentSide) {
+    if alignment != nil || side == .current {
+      referencePlaying = false
+      referencePlayer.pause()
+      toggle()
+    } else {
+      if playing { seek(time) }
+      toggleReference()
+    }
+  }
+  func transportStep(_ amount: Int, side: AlignmentSide) {
+    if alignment != nil || side == .current {
+      step(amount)
+      return
+    }
+    guard let index = referenceFrames.firstIndex(where: { $0.equivalent(to: referenceTime ?? .zero) }) else {
+      if let first = referenceFrames.first { seekReference(first) }
+      return
+    }
+    seekReference(referenceFrames[min(max(0, index + amount), referenceFrames.count - 1)])
+  }
+  func seekCurrent(forReferenceTime time: MediaTime, mapping: TimeMapping) {
+    seek(nearest(time.seconds - mapping.referenceStart.seconds + mapping.currentStart.seconds))
+  }
+  func previewMapping(_ mapping: TimeMapping) {
+    showReference(at: mapping.referenceSeconds(forCurrent: time.seconds))
+  }
+  func seekReference(_ requested: MediaTime, resume: Bool = false) {
+    guard alignment == nil else { return }
+    referencePlaying = false
+    referencePlayer.pause()
+    resumeReferenceAfterSeek = resume
+    showReference(at: nearestReference(requested.seconds).seconds)
+  }
+  static func restartTime(
+    time: MediaTime, frames: [MediaTime], useRange: Bool, rangeStart: Double, rangeEnd: Double
+  ) -> MediaTime? {
+    guard let last = frames.last else { return nil }
+    let atEnd = time.equivalent(to: last) || time.seconds >= last.seconds
+    if useRange {
+      guard time.seconds < rangeStart || time.seconds >= rangeEnd || atEnd else { return nil }
+      return frames.first { $0.seconds >= rangeStart && $0.seconds < rangeEnd }
+    }
+    return atEnd ? frames.first : nil
+  }
+  private func toggleReference() {
+    if referencePlaying {
+      referencePlaying = false
+      if let referenceTime { seekReference(referenceTime) }
+      return
+    }
+    guard alignment == nil, !loading, !referenceFrames.isEmpty, referencePlayer.status == .readyToPlay
+    else { return }
+    if let restart = Self.restartTime(
+      time: referenceTime ?? .zero, frames: referenceFrames, useRange: false, rangeStart: 0,
+      rangeEnd: 0)
+    {
+      seekReference(restart, resume: true)
+      return
+    }
+    referencePlaying = true
+    referencePlayer.automaticallyWaitsToMinimizeStalling = false
+    referencePlayer.rate = speed
+  }
+  private func tickReference(_ raw: CMTime) {
+    guard referencePlaying, alignment == nil, let reference else { return }
+    let seconds = raw.seconds - reference.timelineOrigin.seconds
+    guard seconds.isFinite else { return }
+    referenceTime = nearestReference(seconds)
+    if seconds >= (referenceFrames.last?.seconds ?? reference.duration.seconds) {
+      seekReference(referenceFrames.last ?? .zero)
+    }
+  }
+  private func showReference(at seconds: Double) {
+    guard let reference, let repository else { return }
+    referencePlayer.pause()
+    referenceStatus = seconds < 0 ? "此时间无画面" : seconds >= reference.duration.seconds ? "视频已结束" : nil
+    guard seconds >= 0 else {
+      referenceImage = nil
+      referenceTime = nil
+      return
+    }
+    let target = nearestReference(seconds)
+    referenceSeekTask?.cancel()
+    referenceSeekID = UUID()
+    let request = referenceSeekID
+    let current = generation
+    referenceSeekTask = Task {
+      do {
+        let frame = try await VideoService.frame(
+          repository.assetURL(for: reference), asset: reference, at: target)
+        try Task.checkCancellation()
+        guard generation == current, referenceSeekID == request else { return }
+        referenceTime = frame.actualTime
+        referenceImage = NSImage(
+          cgImage: frame.image, size: NSSize(width: frame.image.width, height: frame.image.height))
+        referenceStatus = seconds >= reference.duration.seconds ? "视频已结束" : nil
+        await referencePlayer.seek(
+          to: CMTimeAdd(target.cmTime, reference.timelineOrigin.cmTime), toleranceBefore: .zero,
+          toleranceAfter: .zero)
+        guard generation == current, referenceSeekID == request else { return }
+        if resumeReferenceAfterSeek {
+          resumeReferenceAfterSeek = false
+          referencePlaying = true
+          referencePlayer.automaticallyWaitsToMinimizeStalling = false
+          referencePlayer.rate = speed
+        }
+      } catch is CancellationError {} catch {
+        if generation == current, referenceSeekID == request { message = error.localizedDescription }
+      }
     }
   }
   private func tick(_ raw: CMTime) {

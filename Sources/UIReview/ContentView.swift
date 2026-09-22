@@ -76,6 +76,22 @@ struct ContentView: View {
     }
 }
 
+private struct MaterialListMarker: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        view.identifier = ReviewFocus.materialListIdentifier
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.identifier = ReviewFocus.materialListIdentifier
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions()
+    }
+}
+
 struct ScreenshotSidebar: View {
     @Bindable var store: ReviewStore
     @State private var renaming: ReviewItem?
@@ -97,6 +113,7 @@ struct ScreenshotSidebar: View {
             }.font(.caption2).buttonStyle(.plain).foregroundStyle(.secondary)
         }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor))
+        .background(MaterialListMarker())
         .alert("重命名素材", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("名称", text: $name)
             Button("取消", role: .cancel) { renaming = nil }

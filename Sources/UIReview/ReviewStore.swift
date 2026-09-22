@@ -27,13 +27,17 @@ enum ScreenshotShortcut {
 enum ClipboardPaste {
     enum Action: Equatable { case materials, referenceVideo, empty }
 
-    static func action(fileURLs: [URL], hasImageData: Bool, hasSelectedAnimation: Bool) -> Action {
+    static func action(
+        fileURLs: [URL], hasImageData: Bool, hasSelectedAnimation: Bool, materialListFocused: Bool = false
+    ) -> Action {
         let videos = fileURLs.filter {
             $0.isFileURL && ["mp4", "mov"].contains($0.pathExtension.lowercased())
         }
         let others = fileURLs.filter { $0.isFileURL && !videos.contains($0) }
         if !others.isEmpty { return .materials }
-        if !videos.isEmpty { return hasSelectedAnimation ? .referenceVideo : .materials }
+        if !videos.isEmpty {
+            return hasSelectedAnimation && !materialListFocused ? .referenceVideo : .materials
+        }
         return hasImageData ? .materials : .empty
     }
 }
@@ -47,7 +51,8 @@ final class ReviewStore {
     private(set) var hasUnsavedChanges = false
     private(set) var library = ReviewLibrary()
     var replacingMotionRegion = false
-    var pendingReferenceID: UUID?
+    var materialListFocused = false
+    var alignmentEditor = AlignmentEditor(referenceAssetID: nil)
     var selectedAnimationID: UUID?
     var selectedScreenshotID: UUID?
     var selectedIssueID: UUID?
@@ -65,6 +70,7 @@ final class ReviewStore {
     private var redoStack: [Snapshot] = []
     private var lastEditKey: String?
     private var lastEditTime = Date.distantPast
+    @ObservationIgnored private var alignmentAnimationID: UUID?
     // Cache fills during View.body evaluation must not invalidate the observation graph.
     @ObservationIgnored var motionKeyAction: ((UInt16) -> Void)?
     @ObservationIgnored var importTask: Task<Void, Never>?
@@ -198,13 +204,34 @@ final class ReviewStore {
         guard let item = currentReview?.itemOrder.first else { return }
         if item.kind == .animation { selectedAnimationID = item.id; tool = .select }
         else { selectedScreenshotID = item.id; tool = screenshot?.issues.isEmpty == false ? .select : .rectangle }
+        syncAlignmentEditor()
     }
 
     private func repairSelection() {
-        if let animation { selectedScreenshotID = nil; if !animation.issues.contains(where: { $0.id == selectedIssueID }) { selectedIssueID = nil }; return }
-        selectedAnimationID = nil
-        if screenshot == nil { selectFirstMaterial() }
-        if issue == nil { selectedIssueID = nil }
+        if let animation {
+            selectedScreenshotID = nil
+            if !animation.issues.contains(where: { $0.id == selectedIssueID }) { selectedIssueID = nil }
+        } else {
+            selectedAnimationID = nil
+            if screenshot == nil { selectFirstMaterial() }
+            if issue == nil { selectedIssueID = nil }
+        }
+        if selectedIssueID == nil { alignmentEditor.clearInspection() }
+        syncAlignmentEditor()
+    }
+
+    func syncAlignmentEditor() {
+        let attached = animation?.resolvedReferenceAssetID
+        let saved = animation?.activeReference
+        let id = animation?.id
+        if alignmentAnimationID != id {
+            alignmentAnimationID = id
+            var editor = AlignmentEditor(referenceAssetID: attached)
+            editor.noteExternalSave(referenceAssetID: attached, saved: saved)
+            alignmentEditor = editor
+            return
+        }
+        alignmentEditor.noteExternalSave(referenceAssetID: attached, saved: saved)
     }
 
     func newReview() {
@@ -338,7 +365,9 @@ final class ReviewStore {
         let urls = (board.readObjects(forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []).filter(\.isFileURL)
         let hasImageData = board.data(forType: .png) != nil || board.data(forType: .tiff) != nil
-        switch ClipboardPaste.action(fileURLs: urls, hasImageData: hasImageData, hasSelectedAnimation: animation != nil) {
+        switch ClipboardPaste.action(
+            fileURLs: urls, hasImageData: hasImageData, hasSelectedAnimation: animation != nil,
+            materialListFocused: materialListFocused) {
         case .materials: pasteImage(from: board)
         case .referenceVideo: pasteReferenceVideo(from: board)
         case .empty: status = "剪贴板中没有图片"

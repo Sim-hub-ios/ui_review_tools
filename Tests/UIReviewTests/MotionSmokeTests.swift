@@ -40,11 +40,13 @@ final class MotionSmokeTests: XCTestCase {
     XCTAssertEqual(store.currentReview?.videoAssets.count, 2)
     store.pasteReferenceVideo(from: board)
     XCTAssertNil(store.importTask) // alignment pending: repeat paste must not import again
-    let referenceID = try XCTUnwrap(store.pendingReferenceID)
+    let referenceID = try XCTUnwrap(store.animation?.referenceAssetID)
     XCTAssertNil(store.animation?.activeReference)
     let alignment = ReferenceAlignment(referenceAssetID: referenceID, currentStart: .zero, referenceStart: .zero)
-    store.mutateAnimation("设置参考") { $0.activeReference = alignment }
-    store.pendingReferenceID = nil
+    store.mutateAnimation("设置参考") {
+      $0.referenceAssetID = referenceID
+      $0.activeReference = alignment
+    }
     store.pasteReferenceVideo(from: board)
     XCTAssertNil(store.importTask)
     XCTAssertEqual(store.animation?.activeReference, alignment)

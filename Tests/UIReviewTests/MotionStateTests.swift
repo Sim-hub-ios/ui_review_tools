@@ -83,6 +83,44 @@ final class MotionStateTests: XCTestCase {
     XCTAssertEqual(review.animations.map(\.id), [second.id])
     XCTAssertEqual(review.videoAssets.map(\.id), [setup.assets[1].id])
   }
+  @MainActor func testTimelinePlacementPersistsBothStartsAndUndoKeepsTheFirstMarker() throws {
+    let setup = try motionStore(assetCount: 2)
+    let reference = setup.assets[1]
+    setup.store.mutateAnimation("挂上参考") { $0.referenceAssetID = reference.id }
+    setup.store.syncAlignmentEditor()
+    XCTAssertEqual(setup.store.animation?.referenceAssetID, reference.id)
+    XCTAssertNil(setup.store.animation?.activeReference)
+    setup.store.placeAlignmentMarker(.current, at: MediaTime(seconds: 0.2), playing: false)
+    XCTAssertNil(setup.store.animation?.activeReference)
+    XCTAssertTrue(setup.store.alignmentEditor.marker(.current)?.equivalent(to: MediaTime(seconds: 0.2)) == true)
+    setup.store.placeAlignmentMarker(.reference, at: MediaTime(seconds: 0.4), playing: false)
+    let saved = try XCTUnwrap(setup.store.animation?.activeReference)
+    XCTAssertTrue(saved.currentStart.equivalent(to: MediaTime(seconds: 0.2)))
+    XCTAssertTrue(saved.referenceStart.equivalent(to: MediaTime(seconds: 0.4)))
+    setup.store.undo()
+    XCTAssertNil(setup.store.animation?.activeReference)
+    XCTAssertEqual(setup.store.animation?.referenceAssetID, reference.id)
+    XCTAssertTrue(setup.store.alignmentEditor.marker(.current)?.equivalent(to: MediaTime(seconds: 0.2)) == true)
+    XCTAssertNil(setup.store.alignmentEditor.marker(.reference))
+    let reopened = ReviewStore(repository: setup.repo)
+    XCTAssertEqual(reopened.animation?.referenceAssetID, reference.id)
+    XCTAssertNil(reopened.animation?.activeReference)
+    setup.store.removeReference()
+    XCTAssertNil(setup.store.animation?.resolvedReferenceAssetID)
+    XCTAssertNil(setup.store.alignmentEditor.marker(.current))
+  }
+  @MainActor func testPlayAtEndRestartsFromTheBeginning() {
+    let frames = [MediaTime(seconds: 0), MediaTime(seconds: 1), MediaTime(seconds: 2)]
+    XCTAssertEqual(
+      MotionSession.restartTime(time: frames[2], frames: frames, useRange: false, rangeStart: 0, rangeEnd: 1),
+      frames[0])
+    XCTAssertNil(
+      MotionSession.restartTime(time: frames[1], frames: frames, useRange: false, rangeStart: 0, rangeEnd: 1))
+    XCTAssertEqual(
+      MotionSession.restartTime(
+        time: frames[2], frames: frames, useRange: true, rangeStart: 1, rangeEnd: 2.5),
+      frames[1])
+  }
   @MainActor func testLoopRejectsRangeWithoutFramesInsteadOfSeekingForever() {
     let session = MotionSession()
     session.frames = [MediaTime(seconds: 0), MediaTime(seconds: 0.033), MediaTime(seconds: 0.066)]

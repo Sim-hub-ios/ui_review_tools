@@ -42,6 +42,16 @@ extension ReviewRepository {
     for animation in review.animations {
       guard let current = review.videoAssets.first(where: { $0.id == animation.currentAssetID })
       else { throw ReviewError.invalidData("动画缺少当前视频。") }
+      if let referenceAssetID = animation.referenceAssetID,
+        review.videoAssets.contains(where: { $0.id == referenceAssetID }) == false
+      {
+        throw ReviewError.invalidData("参考视频不存在。")
+      }
+      if let active = animation.activeReference, let referenceAssetID = animation.referenceAssetID,
+        active.referenceAssetID != referenceAssetID
+      {
+        throw ReviewError.invalidData("参考视频不存在。")
+      }
       func alignment(_ relation: ReferenceAlignment?) throws {
         guard let relation else { return }
         guard let ref = review.videoAssets.first(where: { $0.id == relation.referenceAssetID })

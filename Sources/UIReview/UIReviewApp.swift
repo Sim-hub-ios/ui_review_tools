@@ -83,12 +83,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if event.type != .keyDown {
                 if let window = event.window, window.identifier?.rawValue == "review" {
                     ReviewFocus.endEditingOutsideText(in: window, at: event.locationInWindow)
+                    store?.materialListFocused = ReviewFocus.containsMaterialList(
+                        in: window, at: event.locationInWindow)
                 }
                 return event
             }
             if NSApp.modalWindow == nil, let window = NSApp.keyWindow, window.attachedSheet == nil,
                window.identifier?.rawValue == "review", store?.animation != nil,
-               !(window.firstResponder is NSTextView || window.firstResponder is NSTextField),
+               !ReviewFocus.isEditingText(in: window),
                event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
                [UInt16(49), 123, 124].contains(event.keyCode), let action = store?.motionKeyAction {
                 action(event.keyCode); return nil
@@ -96,24 +98,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if NSApp.modalWindow == nil,
                let window = NSApp.keyWindow, window.attachedSheet == nil,
                window.identifier?.rawValue == "review",
-               store?.handleMaterialDeletion(event, isEditingText: window.firstResponder is NSTextView || window.firstResponder is NSTextField) == true {
+               store?.handleMaterialDeletion(event, isEditingText: ReviewFocus.isEditingText(in: window)) == true {
                 return nil
             }
             if NSApp.modalWindow == nil,
                let window = NSApp.keyWindow, window.attachedSheet == nil,
                window.identifier?.rawValue == "review", (store?.screenshot != nil || store?.animation != nil),
-               let tool = CanvasTool.shortcut(for: event, isEditingText: window.firstResponder is NSTextView || window.firstResponder is NSTextField) {
+               let tool = CanvasTool.shortcut(for: event, isEditingText: ReviewFocus.isEditingText(in: window)) {
                 store?.tool = tool
                 return nil
             }
             if event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
-               event.charactersIgnoringModifiers?.lowercased() == "v",
+               let key = event.charactersIgnoringModifiers?.lowercased(),
                NSApp.modalWindow == nil,
-               NSApp.keyWindow?.attachedSheet == nil,
-               NSApp.keyWindow?.identifier?.rawValue == "review",
-               !(NSApp.keyWindow?.firstResponder is NSTextView || NSApp.keyWindow?.firstResponder is NSTextField) {
-                store?.pasteClipboard()
-                return nil
+               let window = NSApp.keyWindow, window.attachedSheet == nil,
+               window.identifier?.rawValue == "review" {
+                if ReviewFocus.isEditingText(in: window) {
+                    let action: Selector? = switch key {
+                    case "v": #selector(NSText.paste(_:))
+                    case "c": #selector(NSText.copy(_:))
+                    case "x": #selector(NSText.cut(_:))
+                    case "a": #selector(NSText.selectAll(_:))
+                    default: nil
+                    }
+                    if let action, ReviewFocus.performEdit(action, in: window) { return nil }
+                    if key == "v" { return event }
+                } else if key == "v" {
+                    store?.pasteClipboard()
+                    return nil
+                }
             }
             return event
         }

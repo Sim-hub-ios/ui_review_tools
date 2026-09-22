@@ -7,11 +7,11 @@ extension ReviewStore {
   var motionIssue: AnimationIssue? { animation?.issues.first { $0.id == selectedIssueID } }
   func selectAnimation(_ id: UUID) {
     replacingMotionRegion = false
-    pendingReferenceID = nil
     selectedAnimationID = id
     selectedScreenshotID = nil
     selectedIssueID = nil
     tool = .select
+    syncAlignmentEditor()
   }
   func mutateAnimation(_ name: String, key: String? = nil, _ change: (inout Animation) -> Void) {
     let reviewID = library.currentReviewID
@@ -51,12 +51,15 @@ extension ReviewStore {
             guard selectedAnimationID == animationID, animation != nil else {
               throw ReviewError.invalidData("当前动画已切换。")
             }
-            // Import keeps the reference unlinked until both starts are explicitly confirmed.
             commit("导入参考视频") { lib in
-              guard let r = lib.reviews.firstIndex(where: { $0.id == reviewID }) else { return }
+              guard let r = lib.reviews.firstIndex(where: { $0.id == reviewID }),
+                let a = lib.reviews[r].animations.firstIndex(where: { $0.id == animationID })
+              else { return }
               lib.reviews[r].videoAssets.append(result.asset)
+              lib.reviews[r].animations[a].referenceAssetID = result.asset.id
+              lib.reviews[r].animations[a].updatedAt = Date()
+              lib.reviews[r].updatedAt = Date()
             }
-            pendingReferenceID = result.asset.id
           } else {
             let animation = Animation(name: url.lastPathComponent, currentAssetID: result.asset.id)
             commit("导入动画") { lib in
@@ -83,8 +86,8 @@ extension ReviewStore {
   }
   /// Import one MP4/MOV as the current animation's unlinked reference.
   func pasteReferenceVideo(from board: NSPasteboard = .general) {
-    guard let animation, !isBusy, !loadFailed, pendingReferenceID == nil else { return }
-    guard animation.activeReference == nil else {
+    guard let animation, !isBusy, !loadFailed else { return }
+    guard animation.resolvedReferenceAssetID == nil else {
       status = "已有参考视频，请先移除参考后再添加。"
       return
     }
@@ -109,6 +112,7 @@ extension ReviewStore {
     let issue = AnimationIssue(target: target, referenceSnapshot: animation.activeReference)
     mutateAnimation("添加动画问题") { $0.issues.append(issue) }
     selectedIssueID = issue.id
+    alignmentEditor.clearInspection()
   }
   func applyMotionBoxSelection(
     _ rect: Region, asset: VideoAsset, time: MediaTime, target: TemporalTarget
@@ -155,14 +159,64 @@ extension ReviewStore {
   }
   func deleteAnimation(_ id: UUID) {
     let rID = library.currentReviewID
-    let deletingSelected = selectedAnimationID == id
-    let keepPending = deletingSelected ? nil : pendingReferenceID
     commit("删除动画") { lib in
       guard let r = lib.reviews.firstIndex(where: { $0.id == rID }) else { return }
       lib.reviews[r].animations.removeAll { $0.id == id }
-      lib.reviews[r].pruneUnusedVideoAssets(keeping: keepPending)
+      lib.reviews[r].pruneUnusedVideoAssets()
       lib.reviews[r].updatedAt = Date()
     }
-    if deletingSelected { pendingReferenceID = nil }
+  }
+
+  func placeAlignmentMarker(_ side: AlignmentSide, at time: MediaTime, playing: Bool) {
+    let before = alignmentEditor
+    guard let written = alignmentEditor.place(side, at: time, playing: playing) else { return }
+    persistAlignment(written, restoring: before)
+  }
+
+  func beginAlignmentDrag(_ side: AlignmentSide, playing: Bool) -> Bool {
+    alignmentEditor.beginDrag(side, playing: playing)
+  }
+
+  func updateAlignmentDrag(to time: MediaTime) { alignmentEditor.updateDrag(to: time) }
+
+  func endAlignmentDrag() {
+    let before = alignmentEditor
+    guard let written = alignmentEditor.endDrag() else { return }
+    persistAlignment(written, restoring: before)
+  }
+
+  func cancelAlignmentDrag() { alignmentEditor.cancelDrag() }
+
+  func focusAlignment(_ side: AlignmentSide) { alignmentEditor.focus(side) }
+
+  @discardableResult
+  func clickMotionIssue(_ id: UUID) -> IssueClick {
+    guard let issue = animation?.issues.first(where: { $0.id == id }) else { return .select }
+    let result = alignmentEditor.clickIssue(
+      snapshot: issue.referenceSnapshot, alreadySelected: selectedIssueID == id)
+    selectedIssueID = result == .deselect ? nil : id
+    return result
+  }
+
+  func adoptCurrentAlignment() {
+    guard let issue = motionIssue else { return }
+    let relation = animation?.activeReference
+    updateMotionIssue(issue.id) { $0.referenceSnapshot = relation }
+    alignmentEditor.adoptCurrentAlignment()
+  }
+
+  func removeReference() {
+    mutateAnimation("移除参考") {
+      $0.referenceAssetID = nil
+      $0.activeReference = nil
+    }
+  }
+
+  private func persistAlignment(_ alignment: ReferenceAlignment, restoring before: AlignmentEditor) {
+    mutateAnimation("设置参考对齐") {
+      $0.referenceAssetID = alignment.referenceAssetID
+      $0.activeReference = alignment
+    }
+    if animation?.activeReference != alignment { alignmentEditor = before }
   }
 }

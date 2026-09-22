@@ -115,7 +115,7 @@ func motionTool(_ name: String, args: [String: Any], repository: ReviewRepositor
   }
   if name == "get_animation" {
     let ids = Set(
-      [current.id] + [animation.activeReference?.referenceAssetID].compactMap { $0 }
+      [current.id] + [animation.resolvedReferenceAssetID].compactMap { $0 }
         + animation.issues.compactMap { $0.referenceSnapshot?.referenceAssetID })
     let assets = review.videoAssets.filter { ids.contains($0.id) }
     let availability = assets.map { asset -> [String: Any] in

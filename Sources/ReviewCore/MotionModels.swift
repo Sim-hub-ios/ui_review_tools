@@ -166,8 +166,10 @@ public struct Animation: Codable, Identifiable, Equatable, Sendable {
   public var createdAt = Date()
   public var updatedAt = Date()
   public var currentAssetID: UUID
+  public var referenceAssetID: UUID? = nil
   public var activeReference: ReferenceAlignment?
   public var issues: [AnimationIssue] = []
+  public var resolvedReferenceAssetID: UUID? { referenceAssetID ?? activeReference?.referenceAssetID }
   public init(name: String, currentAssetID: UUID) {
     self.name = name
     self.currentAssetID = currentAssetID

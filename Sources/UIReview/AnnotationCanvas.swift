@@ -36,6 +36,7 @@ final class CanvasView: NSView {
     var onDelete: (() -> Void)?
     var onTool: ((CanvasTool) -> Void)?
     var onPaste: (() -> Void)?
+    var onPointerDown: (() -> Void)?
     var onEscape: (() -> Void)?
     var issueNumbers: [UUID: Int] = [:]
     private var start: CGPoint?
@@ -109,6 +110,7 @@ final class CanvasView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        onPointerDown?()
         window?.makeFirstResponder(self)
         let p = convert(event.locationInWindow, from: nil)
         guard screenshot != nil else { return }
