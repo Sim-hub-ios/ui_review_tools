@@ -36,7 +36,7 @@ enum HandoffPrompt {
         let shots = review.screenshots.map { $0.id.uuidString }.joined(separator: ", ")
         let ids = review.animations.map { $0.id.uuidString }.joined(separator: ", ")
         let range = scope == .wholeReview ? "整个 Review" : "当前素材"
-        return "请通过 ui-review MCP 审查 Review \(review.id.uuidString)。范围：\(range)；截图 ID：[\(shots)]；动画 ID：[\(ids)]。已保存 revision：\(revision.uuidString)。截图使用 get_review/get_screenshot；动画使用 get_animation（expected_revision 为上述 revision）、get_animation_frame/get_animation_frames 获取原帧、区域图和参考证据。逐项理解原始评论；\(pendingCount(review)) 项描述待填写。缺失证据或 revision 变化时先报告，不猜测动画参数。"
+        return "请立刻修复 ui-review MCP 中 Review \(review.id.uuidString) 记录的问题，并直接修改当前项目代码。范围：\(range)；截图 ID：[\(shots)]；动画 ID：[\(ids)]。已保存 revision：\(revision.uuidString)。先读取证据再改：截图用 get_review/get_screenshot；动画用 get_animation（expected_revision 为上述 revision）、get_animation_frame/get_animation_frames 获取原帧、区域图和参考证据。按每条原始评论逐项修改，不要只总结或等待确认。\(pendingCount(review)) 项描述待填写，这些先跳过。缺失证据或 revision 变化的条目说明原因后继续处理其余问题，不猜测动画参数。"
     }
 
     static func copyStatus(for scope: HandoffScope) -> String {
