@@ -4,7 +4,7 @@
 
 截图或录屏 → 框选与时间标记 → 评论 → 通过只读 MCP 或文件导出交给 Coding Agent。
 
-当前开发版 **2.0.6**（build 9）：在主界面进度条上对齐参考视频；交接提示词要求 Agent 直接改代码。Sparkle 比较的是 `CFBundleVersion`，不是营销版本号。
+当前版本 **2.0.6**（build 9）：在主界面进度条上对齐参考视频；交接提示词要求 Agent 直接改代码。Sparkle 比较的是 `CFBundleVersion`，不是营销版本号。
 
 ## 构建与运行
 
@@ -28,11 +28,12 @@ bash scripts/publish-release.sh
 
 - **导入**：⌘O、⌘V、拖放图片，支持 PNG/JPEG/HEIC/TIFF/WebP（上限 100MB、4000 万像素；多帧图片取第一帧）。图片统一转换为正向 PNG，坐标使用转换后的原图像素。
 - **视频**：导入 MP4/MOV，支持 H.264 与 SDR HEVC；单文件不超过 500MB、120 秒、4096 像素边长，HDR 暂不支持。支持播放、逐帧定位、倍速、时间点/时间段问题，以及暂停帧区域标注。
-- **参考对比**：添加参考视频后，分别定位两侧起点并确认对齐；支持双视频播放和问题证据导出。
+- **参考对比**：添加参考视频后，在主界面两侧进度条的起点轨道上分别设置起点；第二侧起点设置完成后自动保存对齐。拖动起点时预览新关系，松手保存，取消拖动恢复原位置；保存的对齐支持撤销。支持双视频播放和问题证据导出。
 - **系统截图**：工具栏或全局快捷键 **⌃⌥⌘S**，拖选区域，Esc 取消。首次需授予 macOS 屏幕录制权限。App 关闭窗口后仍在运行，全局快捷键仍可用。
 - **模拟器**：工具栏选择已启动的 iOS Simulator；未启动时提供打开 Simulator 的入口。不会自动重置或改变设备。
 - **删除素材**：⌘Delete 删除当前选中的截图或动画及其问题，⌘Z 可撤销；输入框内保留文字编辑行为，长按不会连续删除多个素材。
 - **标注**：主编辑窗口内 R 切换框选，V 切换选择（无需先点击画布，输入文字或弹窗中不触发）。拖动矩形移动，拖动四角缩放，Delete 删除。右侧编辑评论自动保存。空评论作为待填写的问题保留。
+- **动画问题**：普通框选创建新问题，即使已选中其他问题也不会覆盖它。编辑已有问题的区域使用右侧“在当前帧框选”或“重新框选”；“移除区域”保留评论与时间，可用于只描述时间点或时间段的反馈。
 - **缩放**：适合窗口或 25%–200%，固定倍率下支持双向滚动。
 - **管理**：左侧右键重命名/删除截图或动画。标题栏可编辑 Review 名称。“开始新的 Review”保留旧记录，在下一次导入时自动创建新 Review。应用菜单「检查更新…」可手动检查 GitHub Releases。
 - **历史 Review**：从侧栏或 Review 菜单打开；双击整行切换并关闭历史窗口，单击不会切换。右键可删除 Review；删除当前记录后返回空白工作区，⌘Z 可撤销。空列表可点击“返回工作区”，Esc 关闭历史窗口。
@@ -85,9 +86,9 @@ Claude Code / Cursor / 支持 JSON 的 MCP 客户端配置：
 | list_animations | 可选 review_id、limit、cursor | 动画摘要、libraryRevision 与分页信息 |
 | get_animation | review_id、animation_id，可选 expected_revision | 动画、问题及素材可用性 |
 | get_animation_frame | review_id、animation_id，time 或 issue_id，可选 expected_revision、source、variant、max_dimension | 单帧原图或标注图及实际帧时间 |
-| get_animation_frames | review_id、animation_id、issue_id，可选 expected_revision、count、max_dimension | 时间段问题的有限证据帧（2–8 帧） |
+| get_animation_frames | review_id、animation_id、issue_id，可选 expected_revision、source、count（2–8）、max_dimension | 时间段问题的有限证据帧及缺失说明；实际返回数量可能因去重或省略而减少 |
 
-省略 review_id 时使用当前 Review。所有 ID 均为 UUID；坐标原点在图片左上角。截图 MCP 单张返回图片上限 25MB，超出时使用文件导出。动画工具另有图像与响应预算；交接时传入保存的 expected_revision，版本变化或素材缺失时先报告，不猜测参数。
+只有 get_screenshot、get_issues、list_animations 可省略 review_id 并使用当前 Review；get_review 和三个动画详情/取帧工具必须传入 review_id。所有 ID 均为 UUID；坐标原点在图片左上角。截图 MCP 单张返回图片上限 25MB，超出时使用文件导出。动画取帧的 source 为 current/reference，默认 current；单帧工具的 time 与 issue_id 必须二选一，time 使用 `{value, timescale}` 媒体时间对象。动画工具另有图像与响应预算；交接时传入保存的 expected_revision，版本变化或素材缺失时先报告，不猜测参数。
 App 提供“复制当前素材”和“复制整个 Review”，用户在自己的 Coding Agent 项目会话中粘贴执行。UI Review 不分析或修改项目代码。
 
 ## 本地数据
@@ -115,12 +116,12 @@ bash scripts/test.sh
 
 2.0.3 焦点修复通过 3 项相关测试，包含真实 AppKit 输入框的焦点释放和快捷键输入保护。视频兼容性主要使用合成素材测试，真实设备录屏及完整视觉验收仍需补齐，详见 [V2 冒烟记录](docs/UI_Review_V2_Smoke_Test.md)。
 
-历史截图版本的验证结果与尚未覆盖的环境见 [验证总表](docs/verification.md)，真实界面操作记录见 [冒烟测试](docs/smoke-test-2026-09-05.md)。
+2026-09-05 的 V1 截图版本验证结果与当时未覆盖的环境见 [历史验证总表](docs/verification.md)，当日真实界面操作记录见 [历史冒烟测试](docs/smoke-test-2026-09-05.md)。这些记录中的测试数量和结论仅对应各自标注的日期。
 
 需求入口：[PRD V2.0](docs/UI_Review_PRD_V2.0.md)（截图与动画审查整合需求）。历史需求见 [PRD V1.0](docs/UI_Review_PRD_V1.0.md)，交互稿见 [动画设计与原型记录](docs/motion-review-design.md)，已有决策见 [设计决策](docs/design-decisions.md)。
 
 开发设计见 [V2 技术方案](docs/UI_Review_V2_Technical_Design.md)，包含数据迁移、视频帧与框选、MCP 契约、资源预算和开发拆分；附 [动画问题 JSON 示例](docs/examples/motion-issue-v2.json)。
 
-视觉交付见 [V2 视觉设计稿](docs/UI_Review_V2_Visual_Design.md)，包含动画主流程页面、首次 MCP 向导弹窗，以及逐页 Figma 链接。
+视觉交付见 [V2 视觉设计稿](docs/UI_Review_V2_Visual_Design.md)，包含动画主流程页面、首次 MCP 向导弹窗，以及逐页 Figma 链接。旧对齐和交接预览页面保留为历史设计；首次 MCP 向导仍是待实现的设计。
 
-V2 本机开发版与验证边界见 [开发交付记录](docs/UI_Review_V2_Implementation.md)。使用 `scripts/open-v2-preview.command` 可在独立测试数据目录启动预览。
+V2 首轮开发记录、2.0.6 实现现状与验证边界见 [开发交付记录](docs/UI_Review_V2_Implementation.md)。先执行 `bash scripts/build-app.sh`，再运行 `bash scripts/open-v2-preview.command`，可启动 `build/UI Review.app` 并使用独立数据目录 `build/v2-preview-data`。脚本不生成另一份应用包或合成素材；该目录没有保存数据时，从空工作区开始，普通启动使用的默认 Review 数据目录不受影响。

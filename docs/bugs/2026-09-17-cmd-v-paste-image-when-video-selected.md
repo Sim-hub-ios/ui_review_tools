@@ -1,6 +1,8 @@
 ---
 date: 2026-09-17
 mode: 前台
+status: 已修复
+fix_commit: 2b5510829b9854d3bdd417ea413dc47fe999dbe0
 related_files:
   - Sources/UIReview/UIReviewApp.swift
   - Sources/UIReview/MotionWorkspace.swift
@@ -12,10 +14,20 @@ related_files:
 
 ## Bug 分析
 
-### 问题描述
-当前 Review 的第一项（或当前选中项）是视频时，复制图片后按 ⌘V，不会导入为截图。
+### 修复状态（2026-10-13 核对）
 
-### Bug 路径追踪
+已在提交 `2b55108`（`fix: 选中视频时 ⌘V 按剪贴板内容粘贴图片`）修复。当前统一入口是 [ReviewStore.pasteClipboard](../../Sources/UIReview/ReviewStore.swift)，截图画布、动画画布、播放器和 App 快捷键均使用这一入口。
+
+当前分发规则：有图片等非视频文件 URL 时导入素材；仅有 PNG/TIFF 位图数据时导入截图。仅复制 MP4/MOV 文件且选中动画、焦点不在素材列表时，走参考视频导入入口，该入口只接受单个视频；焦点在素材列表或未选中动画时，导入为新素材。
+
+[ClipboardPasteTests](../../Tests/UIReviewTests/ClipboardPasteTests.swift) 覆盖选中动画时位图导入、图片文件分发、参考视频路径及素材列表焦点规则。本次仅核对实现与测试内容，未重新运行测试或进行真实界面验收。
+
+以下路径、行号、根因与方案保留为 **2026-09-17 修复前分析**，不代表当前行为。
+
+### 问题描述（修复前）
+当时 Review 的第一项（或选中项）是视频时，复制图片后按 ⌘V，不会导入为截图。
+
+### Bug 路径追踪（修复前）
 
 1. **触发点：** `Sources/UIReview/UIReviewApp.swift:92-105` — 用户在视频工作区按下 ⌘V。AppDelegate 的本地按键监视拦截该快捷键。
 2. **传递过程：** `UIReviewApp.swift:98-101` → `MotionWorkspace.swift:227` 或 `MotionWorkspace.swift:54` — 视频暂停时 `MotionCanvas` 复用 `CanvasView`，点击画面后 firstResponder 是 `CanvasView`；播放时 firstResponder 是 `MotionPlayerSurface`。两者的 `onPaste` 都被写成 `store.pasteReferenceVideo()`。
@@ -23,12 +35,12 @@ related_files:
 
 对照路径：空 Review 或当前选中截图时，⌘V 会落到 `store.pasteImage()`（`ReviewStore.swift:322`），图片能正常导入。菜单「粘贴图片」（⇧⌘V）也始终走 `pasteImage()`，所以问题只出现在「选中视频 + ⌘V」。
 
-### 根本原因
+### 根本原因（修复前）
 动画画布把 ⌘V 硬绑成「粘贴参考视频」，且不看剪贴板内容。`MotionCanvas` 又复用了截图画布的 `CanvasView`，AppDelegate 按 `CanvasView` 类型把粘贴交给视图自己的 `onPaste`，于是图片粘贴被参考视频导入完全挡住。
 
-### 解决方案
+### 当时评估的解决方案
 
-#### 方案一：按剪贴板内容分发粘贴 ✅ 推荐
+#### 方案一：按剪贴板内容分发粘贴（当时推荐，已采用统一入口）
 **做法：** 抽出统一的 `pasteClipboard()`（或在现有 `pasteImage` / `pasteReferenceVideo` 之上做分发）：
 1. 剪贴板有图片数据（PNG/TIFF）或图片文件 → `pasteImage()`，导入为截图并选中。
 2. 否则，当前选中动画且剪贴板恰好有一个 MP4/MOV → `pasteReferenceVideo()`。
@@ -53,5 +65,5 @@ AppDelegate、`CanvasView.onPaste`、`MotionPlayerSurface.onPaste` 都改走这�
 - 改动范围：`MotionWorkspace.swift`、相关测试。
 - 屏幕适配：无布局影响。
 
-### 推荐理由
+### 当时的推荐理由
 方案一同时保住两条真实工作流：先导入录屏再贴截图（本次 bug），以及在当前动画上贴一个参考视频。内容分发比焦点分发更符合「复制了什么就粘贴什么」，也不用牺牲已有参考视频快捷键。

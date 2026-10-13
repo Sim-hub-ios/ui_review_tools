@@ -1,5 +1,9 @@
 # 截图侧栏 Review 修复
 
+历史修复记录：2026-09-05，适用于 V1 开发版（1.0.0，build 1）。下文保留当时的设计修复与验证结果；修复已纳入 V1，当前 V2 侧栏已扩展为截图与动画的素材列表，其样式和入口以后续实现为准。
+
+当前入口：侧栏底部“＋ 导入素材”“历史 Review”“新建 Review”，素材右键可重命名或删除。实现见 [ContentView.swift 的 ScreenshotSidebar](../Sources/UIReview/ContentView.swift)，用法见 [README](../README.md)。下文的固定颜色、卡片尺寸与“添加截图”文案是当时记录，不作为当前样式规范。
+
 Review AE6C2F41-01C5-4A31-ABDE-F95377C508D1（r），截图 2B24BC1A-32C8-4BF3-B16C-5BF65D752774，问题 220BF560-0634-4AD2-B503-25E029728D7A。
 
 评论：“这一块与设计稿也是有点差异。”原图 2940 × 1846，区域 x=19.88、y=162.36、w=603.28、h=1612.40，覆盖左侧截图栏。
@@ -19,6 +23,8 @@ Review AE6C2F41-01C5-4A31-ABDE-F95377C508D1（r），截图 2B24BC1A-32C8-4BF3-B
 - Release 构建成功；23 项 XCTest、17 次 MCP JSON-RPC 请求通过。
 - 在隔离 QA 副本检查真实窗口：有截图和空状态下，AX 分割位置均为 232pt。
 - 对照 Figma 检查卡片颜色、尺寸与底部操作；切换第二张截图后画布与问题面板正确更新。
-- 新建 Review 后空状态正确，导出及交接禁用；用户主 Review 未修改。
+- 新建 Review 后空状态正确，导出及交接禁用；当时用户主 Review 未修改。
 
 [测试日志](test-results/sidebar-review/tests.log) · [构建日志](test-results/sidebar-review/build.log)
+
+这些日志是已被 Git 忽略的本机历史证据，仓库不附带；2026-10-13 仅校订文档，未重新执行上述测试。
